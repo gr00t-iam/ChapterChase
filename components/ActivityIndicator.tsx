@@ -66,10 +66,11 @@ export function ActivityIndicator() {
             return (
               <div className="activity-task" key={task.id}>
                 <p>{task.message}</p>
+                {task.currentFile ? <small>{task.id === "metadata-sync" ? `Book: ${task.currentFile}` : `Scanning: ${task.currentFile}`}</small> : null}
                 <div className="activity-progress" aria-label={`${Math.round(progressPercent)} percent complete`}>
                   <span style={{ width: `${progressPercent}%` }} />
                 </div>
-                <small>{task.totalFiles > 0 ? `${task.processedFiles} / ${task.totalFiles} files` : "Finding files..."}</small>
+                <small>{formatActivityCount(task)}</small>
               </div>
             );
           })
@@ -82,6 +83,15 @@ export function ActivityIndicator() {
       </div>
     </div>
   );
+}
+
+function formatActivityCount(task: ScanActivityTask) {
+  if (task.totalFiles <= 0) {
+    return task.id === "metadata-sync" ? "Finding books..." : "Finding files...";
+  }
+
+  const unit = task.id === "metadata-sync" ? "books" : "files";
+  return `${task.processedFiles} / ${task.totalFiles} ${unit}`;
 }
 
 function getTaskProgress(task: ScanActivityTask | null) {

@@ -11,7 +11,6 @@ type SprintState = {
 
 const sprintDurationSeconds = 25 * 60;
 const sprintStorageKey = "chapterchase:readingSprint";
-const focusBadgeStorageKey = "chapterchase:focusBadges";
 
 export function ReadingSprintTimer({
   onSprintStateChange,
@@ -52,7 +51,6 @@ export function ReadingSprintTimer({
     }
 
     const timeout = window.setTimeout(() => {
-      grantFocusBadge();
       window.localStorage.removeItem(sprintStorageKey);
       setEndsAt(null);
       setNow(Date.now());
@@ -94,19 +92,6 @@ export function ReadingSprintTimer({
   );
 }
 
-export function loadFocusBadges() {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const badges = JSON.parse(window.localStorage.getItem(focusBadgeStorageKey) ?? "[]");
-    return Array.isArray(badges) ? badges.filter((badge) => typeof badge === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
 function loadSprintEndTime() {
   if (typeof window === "undefined") {
     return null;
@@ -118,11 +103,4 @@ function loadSprintEndTime() {
   } catch {
     return null;
   }
-}
-
-function grantFocusBadge() {
-  const badges = loadFocusBadges();
-  const badge = new Date().toISOString();
-  window.localStorage.setItem(focusBadgeStorageKey, JSON.stringify([...badges, badge]));
-  window.dispatchEvent(new CustomEvent("chapterchase:focus-badge", { detail: { badge } }));
 }

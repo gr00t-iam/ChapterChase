@@ -51,13 +51,12 @@ export default async function InsightsPage() {
       <main className="px-5 py-6 pr-12">
         <div className="mb-5">
           <h1 className="text-2xl font-medium tracking-tight text-zinc-200">Reading Insights</h1>
-          <p className="mt-1 text-sm text-zinc-400">Your recent reading rhythm, streak, and speed.</p>
+          <p className="mt-1 text-sm text-zinc-400">Your recent reading rhythm, time, and speed.</p>
         </div>
         <ReadingInsightsDashboard
           initialInsights={{
             totalHours: totalSeconds / 3600,
             averageWpm: totalSeconds > 0 ? Math.round(totalWords / (totalSeconds / 60)) : 0,
-            streakDays: days.filter((day) => day.seconds > 0).length,
             days,
             heatmapDays,
           }}

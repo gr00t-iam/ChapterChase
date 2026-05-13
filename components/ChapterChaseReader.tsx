@@ -5,14 +5,6 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, TouchEven
 import { ChevronLeft, ChevronRight, Highlighter, Pause, Pin, Play, Search, Trash2, Type, X } from "lucide-react";
 import { PageFlip } from "page-flip";
 import { ReadingSprintTimer } from "@/components/ReadingSprintTimer";
-import {
-  grantSpeedsterBadge,
-  loadEchoes,
-  loadFocusBadges,
-  loadGamificationSettings,
-  saveEcho,
-  type EchoLoot,
-} from "@/lib/gamification";
 import type { ReaderPage } from "@/lib/book-cache";
 import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
@@ -80,7 +72,6 @@ const readerThemes = new Set(["paper", "night", "scroll", "eink", "reseda", "dee
 const defaultHighlightColor = "#facc15";
 const readerTextSettingsStorageKey = "chapterchase:reader:textSettings";
 const readerFixedPageModeStorageKey = "chapterchase:reader:fixedPageMode";
-const readerMiniMapStorageKey = "chapterchase:reader:showMiniMap";
 const highlightPalette = [
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#86efac" },
@@ -182,7 +173,6 @@ export default function ChapterChaseReader({
   const [isTimerVisible, setIsTimerVisible] = useState(false);
   const [isTextSettingsOpen, setIsTextSettingsOpen] = useState(false);
   const [readerTextSettings, setReaderTextSettings] = useState<ReaderTextSettings>(() => loadReaderTextSettings());
-  const [showMiniMap, setShowMiniMap] = useState(() => loadMiniMapVisibility());
   const [fixedPageMode, setFixedPageMode] = useState(() => loadFixedPageMode());
   const [highlighterMode, setHighlighterMode] = useState(false);
   const [readingRulerPinned, setReadingRulerPinned] = useState(false);
@@ -194,9 +184,6 @@ export default function ChapterChaseReader({
   const [readerHighlights, setReaderHighlights] = useState<ReaderHighlight[]>(() => loadBookHighlights(bookId));
   const [xrayPanel, setXrayPanel] = useState<{ term: string; matches: XRayMatch[]; profile: XRayProfile; tab: "local" | "community" } | null>(null);
   const [sprintState, setSprintState] = useState({ active: false, progress: 0, remainingSeconds: 0 });
-  const [gamification, setGamification] = useState(() => loadGamificationSettings());
-  const [focusBadges, setFocusBadges] = useState<string[]>(() => loadFocusBadges());
-  const [echoToast, setEchoToast] = useState<EchoLoot | null>(null);
   const [quoteImageUrl, setQuoteImageUrl] = useState<string | null>(null);
   const [sessionStats, setSessionStats] = useState({ seconds: 0, words: 0, pages: 0 });
   const flipbookHostRef = useRef<HTMLDivElement | null>(null);
@@ -219,9 +206,6 @@ export default function ChapterChaseReader({
   const lastAnalyticsPageRef = useRef(pageIndex);
   const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
   const currentPage = safePages[pageIndex] ?? safePages[0];
-  const progressPercent = pageCount <= 1 ? 1 : pageIndex / (pageCount - 1);
-  const ghostProgress = gamification.ghostPace ? Math.min(1, sessionStats.seconds / Math.max(90, pageCount * 35)) : 0;
-  const hasMount = sprintState.active || focusBadges.length > 0;
   const bionicReading = localReaderSettings.bionicReading;
   const readerShellStyle = useMemo(
     () =>
@@ -246,11 +230,6 @@ export default function ChapterChaseReader({
   function toggleFixedPageMode(nextValue: boolean) {
     setFixedPageMode(nextValue);
     window.localStorage.setItem(readerFixedPageModeStorageKey, JSON.stringify(nextValue));
-  }
-
-  function toggleMiniMap(nextValue: boolean) {
-    setShowMiniMap(nextValue);
-    window.localStorage.setItem(readerMiniMapStorageKey, JSON.stringify(nextValue));
   }
 
   useEffect(() => {
@@ -343,17 +322,6 @@ export default function ChapterChaseReader({
   }, []);
 
   useEffect(() => {
-    const refreshSettings = () => setGamification(loadGamificationSettings());
-    const refreshBadges = () => setFocusBadges(loadFocusBadges());
-    window.addEventListener("chapterchase:gamification-settings", refreshSettings);
-    window.addEventListener("chapterchase:focus-badge", refreshBadges);
-    return () => {
-      window.removeEventListener("chapterchase:gamification-settings", refreshSettings);
-      window.removeEventListener("chapterchase:focus-badge", refreshBadges);
-    };
-  }, []);
-
-  useEffect(() => {
     const refreshUserSettings = () => {
       const nextSettings = loadLocalReaderSettings();
       setLocalReaderSettings(nextSettings);
@@ -419,30 +387,6 @@ export default function ChapterChaseReader({
 
     return () => window.clearTimeout(timeout);
   }, [bookId, isLocalBook, pageCount, pageIndex, safePages]);
-
-  useEffect(() => {
-    if (!gamification.loot || pageIndex < 49) {
-      return undefined;
-    }
-    const lootPage = Math.floor((pageIndex + 1) / 50) * 50;
-    if (lootPage <= 0 || loadEchoes().some((echo) => echo.bookId === bookId && echo.pageIndex === lootPage)) {
-      return undefined;
-    }
-
-    const timeout = window.setTimeout(() => {
-      const echo = buildEchoLoot(bookId, title, lootPage, currentPage.text);
-      saveEcho(echo);
-      setEchoToast(echo);
-      window.setTimeout(() => setEchoToast(null), 2800);
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [bookId, currentPage.text, gamification.loot, pageIndex, title]);
-
-  useEffect(() => {
-    if (gamification.ghostPace && progressPercent > ghostProgress + 0.08 && pageIndex > 2) {
-      grantSpeedsterBadge(bookId);
-    }
-  }, [bookId, gamification.ghostPace, ghostProgress, pageIndex, progressPercent]);
 
   useEffect(() => {
     function updateSelection() {
@@ -1156,12 +1100,6 @@ export default function ChapterChaseReader({
       </header>
 
       <section className="reader-stage" ref={readerStageRef}>
-        <div className="reader-bottom-timer-nav">
-          <button className="reader-ruler-toggle" onClick={() => setIsTimerVisible((current) => !current)}>
-            {isTimerVisible ? "Hide Timer" : "Timer"}
-          </button>
-          {isTimerVisible ? <ReadingSprintTimer compact onSprintStateChange={setSprintState} onClose={() => setIsTimerVisible(false)} /> : null}
-        </div>
         {readingRulerEnabled ? (
           <div
             ref={rulerRef}
@@ -1381,6 +1319,13 @@ export default function ChapterChaseReader({
           {readingRulerEnabled ? "Hide Ruler" : "Reading Ruler"}
         </button>
 
+        <div className="reader-toolbar-timer">
+          <button className="reader-ruler-toggle" onClick={() => setIsTimerVisible((current) => !current)}>
+            {isTimerVisible ? "Hide Timer" : "Timer"}
+          </button>
+          {isTimerVisible ? <ReadingSprintTimer compact onSprintStateChange={setSprintState} onClose={() => setIsTimerVisible(false)} /> : null}
+        </div>
+
         <div className="reader-text-settings">
           <button
             className="reader-ruler-toggle reader-text-settings-trigger"
@@ -1464,18 +1409,7 @@ export default function ChapterChaseReader({
           <span>{minutesLeft}m left in chapter</span>
           <strong>{finishPrediction}</strong>
         </div>
-        {gamification.ghostPace ? (
-          <div className="ghost-pace" aria-label="Ghost pace">
-            <span className="ghost-pace-track">
-              <i className="ghost-pace-current" style={{ left: `${progressPercent * 100}%` }} />
-              <i className="ghost-pace-shadow" style={{ left: `${ghostProgress * 100}%` }} />
-            </span>
-            <small>{progressPercent >= ghostProgress ? "Ahead of Ghost Pace" : "Ghost is ahead"}</small>
-          </div>
-        ) : null}
       </footer>
-      {showMiniMap ? <StoryMap progress={progressPercent} chapters={pageCount} hasMount={hasMount} onClose={() => toggleMiniMap(false)} /> : null}
-      {echoToast ? <EchoToast echo={echoToast} /> : null}
     </main>
   );
 }
@@ -1495,69 +1429,6 @@ function formatFinishPrediction(minutesLeft: number) {
   }
   const days = Math.floor(hours / 24);
   return `Finish in about ${days}d ${hours % 24}h`;
-}
-
-function StoryMap({ progress, chapters, hasMount, onClose }: { progress: number; chapters: number; hasMount: boolean; onClose: () => void }) {
-  const milestoneCount = Math.min(8, Math.max(3, chapters));
-  const milestones = Array.from({ length: milestoneCount }, (_, index) => {
-    const ratio = milestoneCount <= 1 ? 0 : index / (milestoneCount - 1);
-    return { x: 18 + ratio * 64, y: 58 - Math.sin(ratio * Math.PI) * 30, ratio };
-  });
-  const markerX = 18 + progress * 64;
-  const markerY = 58 - Math.sin(progress * Math.PI) * 30;
-
-  return (
-    <aside className="story-map" aria-label="Story Map">
-      <button className="story-map-close" aria-label="Hide mini map" onClick={onClose}>
-        <X size={14} />
-      </button>
-      <svg viewBox="0 0 100 76">
-        <defs>
-          <clipPath id="story-map-reveal">
-            <rect x="0" y="0" width={progress * 100} height="76" />
-          </clipPath>
-        </defs>
-        <path className="story-map-backdrop" d="M5 64 C20 44 33 62 45 37 C56 17 75 14 95 9 L95 72 L5 72 Z" />
-        <path className="story-map-reveal" clipPath="url(#story-map-reveal)" d="M5 64 C20 44 33 62 45 37 C56 17 75 14 95 9 L95 72 L5 72 Z" />
-        <path className="story-map-path" d="M18 58 C31 31 47 28 58 34 C68 40 74 53 82 58" />
-        {milestones.map((milestone, index) => (
-          <circle
-            key={`${milestone.x}-${index}`}
-            cx={milestone.x}
-            cy={milestone.y}
-            r="2.6"
-            className={progress >= milestone.ratio ? "complete" : ""}
-          />
-        ))}
-        <g transform={`translate(${markerX - 4} ${markerY - 7})`}>
-          <path className="story-map-marker" d="M4 0 C8 0 11 3 11 7 C11 12 4 18 4 18 C4 18 -3 12 -3 7 C-3 3 0 0 4 0 Z" />
-          {hasMount ? <path className="story-map-mount" d="M-3 8 L3 3 L8 9 L12 5 L17 14 L-5 14 Z" /> : null}
-        </g>
-      </svg>
-    </aside>
-  );
-}
-
-function EchoToast({ echo }: { echo: EchoLoot }) {
-  return (
-    <div className="echo-toast" data-rarity={echo.rarity}>
-      <EchoIcon icon={echo.icon} />
-      <div>
-        <span>{echo.rarity} Echo discovered</span>
-        <strong>{echo.title}</strong>
-      </div>
-    </div>
-  );
-}
-
-function EchoIcon({ icon }: { icon: EchoLoot["icon"] }) {
-  if (icon === "potion") {
-    return <svg viewBox="0 0 48 48"><path d="M19 4h10v7l9 17c4 8-2 16-11 16h-6c-9 0-15-8-11-16l9-17V4Zm-1 26c-2 5 1 8 6 8s8-3 6-8H18Z" /></svg>;
-  }
-  if (icon === "scroll") {
-    return <svg viewBox="0 0 48 48"><path d="M10 9c0-4 4-7 8-5h20v30c0 6-5 10-11 10H12c4-2 5-5 5-9V9h-7Zm12 2v24c0 1 0 2-.3 3H28c3 0 5-2 5-5V11H22Z" /></svg>;
-  }
-  return <svg viewBox="0 0 48 48"><path d="M25 3l5 5-7 18 13 13-5 5-13-13-8 8-5-5 8-8-4-4 5-5 4 4L25 3Z" /></svg>;
 }
 
 function ScrollReaderPages({
@@ -1612,21 +1483,6 @@ function ScrollReaderPages({
   );
 }
 
-function buildEchoLoot(bookId: string, title: string, pageIndex: number, text: string): EchoLoot {
-  const words = countWords(text);
-  const rarity = words > 1200 ? "Epic" : words > 600 ? "Rare" : "Common";
-  const icon = rarity === "Epic" ? "sword" : rarity === "Rare" ? "potion" : "scroll";
-  return {
-    id: crypto.randomUUID(),
-    bookId,
-    title: `${title} Echo ${Math.floor(pageIndex / 50)}`,
-    icon,
-    rarity,
-    pageIndex,
-    createdAt: new Date().toISOString(),
-  };
-}
-
 function loadReaderTextSettings(): ReaderTextSettings {
   if (typeof window === "undefined") {
     return defaultReaderTextSettings;
@@ -1657,19 +1513,6 @@ function loadFixedPageMode() {
 
   try {
     const stored = JSON.parse(window.localStorage.getItem(readerFixedPageModeStorageKey) ?? "true") as unknown;
-    return typeof stored === "boolean" ? stored : true;
-  } catch {
-    return true;
-  }
-}
-
-function loadMiniMapVisibility() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(readerMiniMapStorageKey) ?? "true") as unknown;
     return typeof stored === "boolean" ? stored : true;
   } catch {
     return true;

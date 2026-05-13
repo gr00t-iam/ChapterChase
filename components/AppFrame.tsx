@@ -121,10 +121,9 @@ function BookPreviewCard({ preview }: { preview: BookPreviewDetail | null }) {
             <strong>{preview.title}</strong>
             <span>{preview.author ?? "Unknown author"}</span>
           </div>
-          <p>{preview.description?.trim() || "No summary is available for this book yet. A rescan may find embedded description metadata."}</p>
         </div>
       ) : (
-        <p className="sidebar-book-preview-idle">Hover over a book to view its summary here...</p>
+        <p className="sidebar-book-preview-idle">Hover over a book to view details...</p>
       )}
     </section>
   );

@@ -45,6 +45,40 @@ export function startScanActivity(folderId: string, folderName: string) {
   return task;
 }
 
+export function startMetadataActivity(totalFiles: number) {
+  const now = new Date().toISOString();
+  const id = "metadata-sync";
+  const task: ScanActivityTask = {
+    id,
+    folderId: id,
+    folderName: "Metadata",
+    active: true,
+    phase: "scanning",
+    currentFile: null,
+    processedFiles: 0,
+    totalFiles,
+    message: totalFiles ? `Updating metadata: 0 of ${totalFiles} books completed` : "No missing metadata found",
+    startedAt: now,
+    updatedAt: now,
+  };
+  store.tasks.set(id, task);
+  return task;
+}
+
+export function updateMetadataActivity(processedFiles: number, totalFiles: number, currentFile?: string | null) {
+  return updateScanActivity("metadata-sync", {
+    phase: "scanning",
+    currentFile: currentFile ?? null,
+    processedFiles,
+    totalFiles,
+    message: `Updating metadata: ${processedFiles} of ${totalFiles} books completed`,
+  });
+}
+
+export function finishMetadataActivity(message: string, failed = false) {
+  return finishScanActivity("metadata-sync", message, failed);
+}
+
 export function updateScanActivity(
   folderId: string,
   patch: Partial<Pick<ScanActivityTask, "phase" | "currentFile" | "processedFiles" | "totalFiles" | "message">>

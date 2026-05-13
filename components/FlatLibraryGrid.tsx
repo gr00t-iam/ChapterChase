@@ -100,6 +100,7 @@ function FlatLibraryGridInner() {
             )}
             {book.localOnly ? <span className="local-only-tag">Local Only</span> : null}
             {book.offlineAvailable ? <span className="offline-checkmark" title="Downloaded for offline">✓</span> : null}
+            {book.coverLoading ? <span className="cover-loading-overlay"><i className="book-cover-spinner" /></span> : null}
           </div>
           <div className="flat-book-meta">
             <p>{book.title}</p>

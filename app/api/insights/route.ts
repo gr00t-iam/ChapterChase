@@ -26,12 +26,10 @@ export async function GET() {
   const totalWords = recentSessions.reduce((sum, session) => sum + session.wordsRead, 0);
   const totalHours = totalSeconds / 3600;
   const averageWpm = totalSeconds > 0 ? Math.round(totalWords / (totalSeconds / 60)) : 0;
-  const streakDays = Array.from(recentByDay.values()).filter((day) => day.seconds > 0).length;
 
   return Response.json({
     totalHours,
     averageWpm,
-    streakDays,
     days: mapDayBuckets(recentByDay),
     heatmapDays: mapDayBuckets(yearByDay),
   });

@@ -11,6 +11,7 @@ export type LibraryBookView = {
   description?: string | null;
   coverPath: string | null;
   coverVersion?: number;
+  coverLoading?: boolean;
   status: string;
   progress?: Array<{ percent: number; updatedAt?: string | Date }>;
   wantToRead?: Array<{ id: string }>;

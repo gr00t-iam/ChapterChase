@@ -34,6 +34,7 @@ export function BookContextMenu({
   const [isEditingCover, setIsEditingCover] = useState(false);
   const [coverPrompt, setCoverPrompt] = useState("");
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+  const [isFetchingHardcover, setIsFetchingHardcover] = useState(false);
   const [coverError, setCoverError] = useState("");
   const [menuOffsetX, setMenuOffsetX] = useState(0);
   const [toast, setToast] = useState("");
@@ -145,6 +146,54 @@ export function BookContextMenu({
     setIsGeneratingCover(false);
     setIsEditingCover(false);
     setCoverPrompt("");
+    setIsOpen(false);
+    setMenuOffsetX(0);
+  }
+
+  async function fetchFromHardcover(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isFetchingHardcover) {
+      return;
+    }
+
+    setCoverError("");
+    setIsFetchingHardcover(true);
+    onUpdateBook({ id: bookId, coverLoading: true });
+
+    const response = await fetch("/api/metadata/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookId }),
+    }).catch(() => null);
+
+    if (!response?.ok) {
+      const data = (await response?.json().catch(() => null)) as { error?: string } | null;
+      setCoverError(data?.error ?? "Unable to fetch Hardcover metadata.");
+      setIsFetchingHardcover(false);
+      onUpdateBook({ id: bookId, coverLoading: false });
+      return;
+    }
+
+    const data = (await response.json()) as {
+      book?: {
+        id: string;
+        title?: string;
+        author?: string | null;
+        description?: string | null;
+        coverPath?: string | null;
+      };
+    };
+    onUpdateBook({
+      id: bookId,
+      ...(data.book?.title ? { title: data.book.title } : {}),
+      ...(data.book && "author" in data.book ? { author: data.book.author ?? null } : {}),
+      ...(data.book && "description" in data.book ? { description: data.book.description ?? null } : {}),
+      ...(data.book?.coverPath ? { coverPath: data.book.coverPath, coverVersion: Date.now() } : {}),
+      coverLoading: false,
+    });
+    setIsFetchingHardcover(false);
+    setIsEditingCover(false);
     setIsOpen(false);
     setMenuOffsetX(0);
   }
@@ -263,6 +312,10 @@ export function BookContextMenu({
               <button className="book-cover-generate" onClick={generateCover} disabled={!coverPrompt.trim() || isGeneratingCover}>
                 {isGeneratingCover ? <span className="book-cover-spinner" /> : null}
                 {isGeneratingCover ? "Generating..." : "Generate Cover"}
+              </button>
+              <button className="book-cover-generate secondary" onClick={fetchFromHardcover} disabled={isFetchingHardcover}>
+                {isFetchingHardcover ? <span className="book-cover-spinner" /> : null}
+                {isFetchingHardcover ? "Fetching..." : "Fetch from Hardcover"}
               </button>
             </div>
           ) : null}

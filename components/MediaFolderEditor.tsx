@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Folder, FolderOpen, HardDrive, Plus, RotateCw, X } from "lucide-react";
 import { addLibraryFolderAction } from "@/app/admin/libraries/actions";
+import { MetadataDownloaderCard } from "@/components/MetadataDownloaderCard";
 
 type FolderListing = {
   currentPath: string | null;
@@ -120,7 +121,12 @@ export function MediaFolderEditor() {
             ) : null}
             {activeTab === "cover" ? <p className="text-sm text-zinc-300">Folder cover image settings are handled per book in v1.</p> : null}
             {activeTab === "advanced" ? <p className="text-sm text-zinc-300">Advanced scan settings will apply when scheduled scans are enabled.</p> : null}
-            {activeTab === "tasks" ? <p className="text-sm text-zinc-300">Use Force Scan on an existing folder below to refresh this library.</p> : null}
+            {activeTab === "tasks" ? (
+              <div className="grid gap-4">
+                <p className="text-sm text-zinc-300">Use Force Scan on an existing folder below to refresh this library.</p>
+                <MetadataDownloaderCard />
+              </div>
+            ) : null}
             <div className="flex justify-end gap-2 border-t border-white/20 pt-4">
               <button type="reset" className="kavita-light-button" onClick={() => setSelectedPath("")}>
                 Reset

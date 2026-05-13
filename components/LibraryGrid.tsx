@@ -219,6 +219,7 @@ function TopShelfCoverBook({
         <BookCover book={book} />
         {book.localOnly ? <span className="local-only-tag">Local Only</span> : null}
         {book.offlineAvailable ? <span className="offline-checkmark" title="Downloaded for offline">✓</span> : null}
+        {book.coverLoading ? <span className="cover-loading-overlay"><i className="book-cover-spinner" /></span> : null}
         <span className="wood-current-cover-shadow" aria-hidden="true" />
       </div>
       <div className="wood-reading-progress wood-current-cover-progress" aria-label={`${Math.round(progressPercent)} percent read`}>

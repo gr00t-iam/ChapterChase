@@ -3,7 +3,6 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { defaultGamificationSettings, loadGamificationSettings, saveGamificationSettings } from "@/lib/gamification";
 
 type ReadingProfile = {
   id: string;
@@ -29,7 +28,7 @@ type SettingsUser = {
   readingProfiles: string;
 };
 
-const tabs = ["Account", "Preferences", "Reading Profiles", "Gamification", "Annotations", "Social"] as const;
+const tabs = ["Account", "Preferences", "Reading Profiles", "Annotations", "Social"] as const;
 const defaultColors = ["#facc15", "#38bdf8", "#fb7185", "#4ade80"];
 const defaultProfiles: ReadingProfile[] = [
   { id: "paper", name: "Paper", theme: "paper", fontScale: 1, lineHeight: 1.55 },
@@ -52,7 +51,6 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
     annotationHighlightColors: parseColors(user.annotationHighlightColors),
     readingProfiles: parseProfiles(user.readingProfiles),
   }));
-  const [gamification, setGamification] = useState(() => loadGamificationSettings());
   const [bionicReading, setBionicReading] = useState(() => loadLocalUserSettings().bionicReading);
 
   const payload = useMemo(
@@ -141,7 +139,6 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
     }
 
     setStatus("Settings saved.");
-    saveGamificationSettings(gamification);
     startTransition(() => router.refresh());
   }
 
@@ -305,30 +302,6 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
             </div>
             <button className="secondary-button" onClick={() => update("annotationHighlightColors", [...form.annotationHighlightColors, "#a78bfa"])}>
               <Plus size={16} /> Add Highlight Color
-            </button>
-          </div>
-        ) : null}
-
-        {activeTab === "Gamification" ? (
-          <div className="settings-section">
-            <h2>Gamification</h2>
-            <p>Optional reading overlays, loot, and badges. Ancient Scroll and Deep Sea themes are always available.</p>
-            <div className="settings-grid">
-              <Toggle label="Story Map" checked={gamification.storyMap} onChange={(value) => setGamification((current) => ({ ...current, storyMap: value }))} />
-              <Toggle label="Echo Loot Drops" checked={gamification.loot} onChange={(value) => setGamification((current) => ({ ...current, loot: value }))} />
-              <Toggle
-                label="Assistant Avatar"
-                checked={gamification.assistantAvatar}
-                onChange={(value) => setGamification((current) => ({ ...current, assistantAvatar: value }))}
-              />
-              <Toggle
-                label="Ghost Pace"
-                checked={gamification.ghostPace}
-                onChange={(value) => setGamification((current) => ({ ...current, ghostPace: value }))}
-              />
-            </div>
-            <button className="secondary-button" onClick={() => setGamification(defaultGamificationSettings)}>
-              Reset Feature Defaults
             </button>
           </div>
         ) : null}
