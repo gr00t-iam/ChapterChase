@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <defs>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.18" numOctaves="5" seed="29" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="
+        0.34 0    0    0 0.08
+        0    0.19 0    0 0.045
+        0    0    0.09 0 0.025
+        0    0    0    1 0" result="walnut"/>
+      <feComponentTransfer in="walnut">
+        <feFuncR type="gamma" amplitude="1.18" exponent="1.35" offset="0"/>
+        <feFuncG type="gamma" amplitude="1.08" exponent="1.45" offset="0"/>
+        <feFuncB type="gamma" amplitude="0.96" exponent="1.55" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+    <linearGradient id="planks" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1a0e08"/>
+      <stop offset="0.18" stop-color="#3b2112"/>
+      <stop offset="0.32" stop-color="#231109"/>
+      <stop offset="0.56" stop-color="#4d2a16"/>
+      <stop offset="0.74" stop-color="#28150b"/>
+      <stop offset="1" stop-color="#120905"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#planks)"/>
+  <rect width="800" height="800" filter="url(#grain)" opacity="0.82"/>
+  <path d="M0 96 C130 64 206 124 342 82 C488 38 596 118 800 74" fill="none" stroke="#6d3b1d" stroke-width="18" opacity="0.16"/>
+  <path d="M0 322 C182 260 284 356 462 290 C598 240 672 300 800 268" fill="none" stroke="#0a0503" stroke-width="24" opacity="0.22"/>
+  <path d="M0 610 C142 566 260 638 430 586 C590 536 690 612 800 570" fill="none" stroke="#7b4522" stroke-width="16" opacity="0.13"/>
+</svg>

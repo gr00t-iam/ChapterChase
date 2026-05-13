@@ -2,25 +2,52 @@
   "name": "chapter-chase",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:push": "node scripts/init-db.mjs",
+    "scan": "tsx scripts/scan.ts",
+    "duplicates": "tsx scripts/find-duplicates.ts"
   },
   "dependencies": {
-    "next": "16.2.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "@prisma/client": "^5.22.0",
+    "@tanstack/react-virtual": "^3.13.24",
+    "@types/nodemailer": "^8.0.0",
+    "adm-zip": "^0.5.17",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.9.0",
+    "clsx": "^2.1.1",
+    "dexie": "^4.4.2",
+    "epubjs": "^0.4.2",
+    "fast-xml-parser": "^5.7.3",
+    "framer-motion": "^12.38.0",
+    "localforage": "^1.10.0",
+    "lucide-react": "^1.14.0",
+    "next": "^16.2.6",
+    "nodemailer": "^8.0.7",
+    "page-flip": "^2.0.7",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.7.284",
+    "prisma": "^5.22.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/adm-zip": "^0.5.8",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

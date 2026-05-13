@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChapterChase
 
-## Getting Started
+ChapterChase is a self-hosted ebook library web app inspired by Kavita. It indexes EPUB and PDF files from mounted library folders, preserves your existing NAS folder layout, and serves a browser-based reader with page-turn animation and text-to-speech auto-advance.
 
-First, run the development server:
+## Current Features
+
+- Multi-user web login with first-run admin setup.
+- Admin-managed library folders.
+- Manual library scans that detect new, changed, missing, and failed files.
+- EPUB metadata, cover, and text extraction.
+- PDF metadata and text extraction when the PDF contains readable text.
+- Metadata enrichment from Open Library and Google Books.
+- Per-user reading progress.
+- Browser reader at `/reader/[id]` with page-turn animation and Web Speech API TTS.
+- Docker-first self-hosting with separate `/library` and `/data` mounts.
+
+## Local Development
 
 ```bash
+npm install
+copy .env.example .env
+npm run db:generate
+npm run db:push
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000), create the first admin account, then add a library folder from **Admin > Library Folders**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For local testing, set `CHAPTERCHASE_LIBRARY_DIR` or enter a full path such as:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Windows: `C:\Users\you\Books`
+- NAS mounted on Windows: `Z:\Books`
+- Linux/macOS: `/mnt/books`
 
-## Learn More
+ChapterChase does not move or rename your books. It stores only database records, extracted covers, and parsed text cache under `CHAPTERCHASE_DATA_DIR`.
 
-To learn more about Next.js, take a look at the following resources:
+## Docker
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+docker compose up --build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Edit `docker-compose.yml` so the left side of the `/library` volume points at your mounted NAS share:
 
-## Deploy on Vercel
+```yaml
+volumes:
+  - chapterchase-data:/data
+  - /mnt/books:/library:ro
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Windows example after mounting a NAS share:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```yaml
+volumes:
+  - chapterchase-data:/data
+  - C:/Mounted/Books:/library:ro
+```
+
+Then click **Browse for Media Folders** and select `/library` inside ChapterChase.
+
+## Media Folder Browser
+
+ChapterChase works like Kavita: the folder browser shows paths visible to the running server/container. If the app is hosted on a NAS or Docker host, mount the NAS book share into the app first, then browse to that mounted path from the web UI.
+
+Set `CHAPTERCHASE_MEDIA_ROOTS` to control the starting locations shown in the browser. Multiple roots use your OS path delimiter:
+
+```env
+CHAPTERCHASE_MEDIA_ROOTS="/library:/other-books"
+```
+
+On Windows development machines:
+
+```env
+CHAPTERCHASE_MEDIA_ROOTS="C:\Mounted\Books;D:\Ebooks"
+```
+
+Browsers cannot safely send arbitrary Windows Explorer paths to a remote NAS-hosted web app, so ChapterChase intentionally browses server-visible folders rather than client-only folders.
+
+By default, admins can also type and browse any absolute server-visible path. Set `CHAPTERCHASE_RESTRICT_MEDIA_ROOTS=true` to lock browsing to only the roots listed in `CHAPTERCHASE_MEDIA_ROOTS`.
+
+## Production Notes
+
+- Keep `/library` read-only when possible.
+- Back up the `/data` volume; it contains `chapterchase.db`, covers, and reader cache.
+- Use a reverse proxy with HTTPS for remote access and better iPad PWA behavior.
+- Run scans manually from the admin UI after adding books. Scheduled scan orchestration can be added with a host cron job running `npm run scan` or a container sidecar.
+- See [Asustor production test setup](docs/asustor-production-test.md) for a step-by-step NAS deployment path.

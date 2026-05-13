@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  username     String?           @unique
+  name         String
+  passwordHash String
+  role         String            @default("USER")
+  isVerified   Boolean           @default(false)
+  verificationToken String?      @unique
+  resetPasswordToken String?     @unique
+  resetPasswordExpires DateTime?
+  readerTheme  String            @default("paper")
+  uiLayout     String            @default("flat")
+  defaultReadingMode String      @default("auto")
+  blurUnreadSummaries Boolean     @default(false)
+  disableAnimations Boolean       @default(false)
+  collapseSeriesRelationships Boolean @default(false)
+  annotationHighlightColors String @default("[\"#facc15\",\"#38bdf8\",\"#fb7185\",\"#4ade80\"]")
+  shareProfile Boolean            @default(false)
+  shareSeriesReviews Boolean      @default(false)
+  viewSharedAnnotations Boolean   @default(false)
+  readingProfiles String          @default("[]")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  sessions     Session[]
+  progress     ReadingProgress[]
+  wantToRead   WantToRead[]
+  collections  Collection[]
+  collectionBooks CollectionBook[]
+  readingSessions ReadingSession[]
+  annotations  Annotation[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LibraryFolder {
+  id                  String   @id @default(cuid())
+  name                String
+  rootPath            String   @unique
+  enabled             Boolean  @default(true)
+  formats             String   @default("EPUB,PDF")
+  scanIntervalMinutes Int?
+  lastScanAt          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  books               Book[]
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Book {
+  id              String            @id @default(cuid())
+  libraryFolderId String
+  title           String
+  sortTitle       String
+  author          String?
+  description     String?
+  isbn            String?
+  language        String?
+  publisher       String?
+  publishedDate   String?
+  format          String
+  status          String            @default("IMPORTING")
+  filePath        String            @unique
+  relativePath    String
+  fileSize        String
+  fileMtimeMs     String
+  fileHash        String?
+  coverPath       String?
+  cachePath       String?
+  pageCount       Int?
+  metadataJson    String?
+  error           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  lastSeenAt      DateTime          @default(now())
+  libraryFolder   LibraryFolder     @relation(fields: [libraryFolderId], references: [id], onDelete: Cascade)
+  progress        ReadingProgress[]
+  wantToRead      WantToRead[]
+  collectionBooks CollectionBook[]
+  readingSessions ReadingSession[]
+  annotations     Annotation[]
+
+  @@index([libraryFolderId])
+  @@index([title])
+  @@index([author])
+  @@index([status])
+}
+
+model Collection {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  books     CollectionBook[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model CollectionBook {
+  id           String     @id @default(cuid())
+  userId       String
+  collectionId String
+  bookId       String
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  book         Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, bookId])
+  @@index([userId])
+  @@index([bookId])
+}
+
+model WantToRead {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@index([bookId])
+}
+
+model ReadingProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  pageIndex Int      @default(0)
+  locator   String?
+  percent   Float    @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+}
+
+model ReadingSession {
+  id              String   @id @default(cuid())
+  userId          String
+  bookId          String
+  durationSeconds Int      @default(0)
+  wordsRead       Int      @default(0)
+  pagesRead       Int      @default(0)
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book            Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([bookId])
+}
+
+model Annotation {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  quote     String
+  note      String?
+  color     String   @default("#facc15")
+  locator   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([bookId])
+}

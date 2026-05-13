@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <filter id="grain" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.035" numOctaves="5" seed="21" stitchTiles="stitch"/>
+    <feColorMatrix type="matrix" values="0.55 0 0 0 0.42 0 0.42 0 0 0.28 0 0 0.22 0 0.12 0 0 0 0.34 0"/>
+  </filter>
+  <rect width="1024" height="1024" fill="#d7b577"/>
+  <rect width="1024" height="1024" filter="url(#grain)" opacity="0.74"/>
+  <g opacity="0.38">
+    <path d="M0 93 C141 69 191 126 322 86 C492 34 574 126 735 77 C841 45 934 64 1024 42 L1024 0 L0 0Z" fill="#f0d69a"/>
+    <path d="M0 1004 C139 933 289 1020 430 964 C560 912 698 1015 841 953 C916 921 969 933 1024 914 L1024 1024 L0 1024Z" fill="#906334"/>
+    <path d="M16 0 C50 188 0 294 31 491 C62 690 20 811 51 1024 L0 1024 L0 0Z" fill="#8b5e2d"/>
+    <path d="M1008 0 C987 196 1031 318 1002 519 C970 741 1011 866 973 1024 L1024 1024 L1024 0Z" fill="#8b5e2d"/>
+  </g>
+</svg>
