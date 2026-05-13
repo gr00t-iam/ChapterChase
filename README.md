@@ -1,6 +1,6 @@
 # ChapterChase
 
-ChapterChase is a self-hosted ebook library web app inspired by Kavita. It indexes EPUB and PDF files from mounted library folders, preserves your existing NAS folder layout, and serves a browser-based reader with page-turn animation and text-to-speech auto-advance.
+ChapterChase is a self-hosted ebook library web app. It indexes EPUB and PDF files from mounted library folders, preserves your existing NAS folder layout, and serves a browser-based reader with page-turn animation and text-to-speech auto-advance.
 
 ## Current Features
 
