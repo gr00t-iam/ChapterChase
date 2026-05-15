@@ -15,7 +15,7 @@ services:
       HARDCOVER_API_KEY: "${HARDCOVER_API_KEY:-}"
     volumes:
       - /volume1/Docker/chapterchase/data:/data
-      - books-smb:/library:ro
+      - /volume1/home/Books:/library:ro
     restart: unless-stopped
 
 volumes:
