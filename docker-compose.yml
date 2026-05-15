@@ -8,17 +8,20 @@ services:
       DATABASE_URL: "file:/data/chapterchase.db"
       CHAPTERCHASE_DATA_DIR: "/data"
       CHAPTERCHASE_LIBRARY_DIR: "/library"
-      CHAPTERCHASE_MEDIA_ROOTS: "/library:/share:/mnt"
+      CHAPTERCHASE_MEDIA_ROOTS: "/library"
       CHAPTERCHASE_RESTRICT_MEDIA_ROOTS: "false"
       CHAPTERCHASE_SECURE_COOKIES: "false"
       NODE_ENV: "production"
+      HARDCOVER_API_KEY: "${HARDCOVER_API_KEY:-}"
     volumes:
-      - chapterchase-data:/data
-      # Replace the left side with your NAS mount or local book folder.
-      # Windows example after mounting a NAS share: C:/Mounted/Books:/library:ro
-      # Linux example: /mnt/books:/library:ro
-      - ./library:/library:ro
+      - /volume1/Docker/chapterchase/data:/data
+      - books-smb:/library:ro
     restart: unless-stopped
 
 volumes:
-  chapterchase-data:
+  books-smb:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//10.0.0.55/home/Books"
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,ro,iocharset=utf8"
