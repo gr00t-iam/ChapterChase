@@ -35,17 +35,18 @@ export async function createSession(userId: string) {
   });
 
   const cookieStore = await cookies();
+  const secureCookies = shouldUseSecureCookies();
   cookieStore.set(sessionCookie, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies,
     path: "/",
     expires: expiresAt,
   });
   cookieStore.set(roleCookie, user.role, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookies,
     path: "/",
     expires: expiresAt,
   });
@@ -106,4 +107,13 @@ export async function requireAdmin(): Promise<User> {
 
 export function isAdmin(role: string) {
   return role.toUpperCase() === "ADMIN";
+}
+
+function shouldUseSecureCookies() {
+  const explicit = process.env.CHAPTERCHASE_SECURE_COOKIES?.trim().toLowerCase();
+  if (explicit) {
+    return ["1", "true", "yes", "on"].includes(explicit);
+  }
+
+  return process.env.CHAPTERCHASE_APP_URL?.trim().toLowerCase().startsWith("https://") ?? process.env.NODE_ENV === "production";
 }

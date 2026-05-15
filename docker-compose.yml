@@ -10,6 +10,7 @@ services:
       CHAPTERCHASE_LIBRARY_DIR: "/library"
       CHAPTERCHASE_MEDIA_ROOTS: "/library:/share:/mnt"
       CHAPTERCHASE_RESTRICT_MEDIA_ROOTS: "false"
+      CHAPTERCHASE_SECURE_COOKIES: "false"
       NODE_ENV: "production"
     volumes:
       - chapterchase-data:/data
