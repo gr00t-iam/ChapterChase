@@ -84,4 +84,4 @@ By default, admins can also type and browse any absolute server-visible path. Se
 - Back up the `/data` volume; it contains `chapterchase.db`, covers, and reader cache.
 - Use a reverse proxy with HTTPS for remote access and better iPad PWA behavior.
 - Run scans manually from the admin UI after adding books. Scheduled scan orchestration can be added with a host cron job running `npm run scan` or a container sidecar.
-- See [Asustor production test setup](docs/asustor-production-test.md) for a step-by-step NAS deployment path.
+
