@@ -35,7 +35,7 @@ export function BookContextMenu({
   const [isEditingCover, setIsEditingCover] = useState(false);
   const [coverPrompt, setCoverPrompt] = useState("");
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
-  const [isFetchingHardcover, setIsFetchingHardcover] = useState(false);
+  const [isFetchingGoogleBooks, setIsFetchingHardcover] = useState(false);
   const [coverError, setCoverError] = useState("");
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [toast, setToast] = useState("");
@@ -166,10 +166,10 @@ export function BookContextMenu({
     setIsOpen(false);
   }
 
-  async function fetchFromHardcover(event: MouseEvent<HTMLButtonElement>) {
+  async function fetchFromGoogleBooks(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (isFetchingHardcover) {
+    if (isFetchingGoogleBooks) {
       return;
     }
 
@@ -185,7 +185,7 @@ export function BookContextMenu({
 
     if (!response?.ok) {
       const data = (await response?.json().catch(() => null)) as { error?: string } | null;
-      setCoverError(data?.error ?? "Unable to fetch Hardcover metadata.");
+      setCoverError(data?.error ?? "Unable to fetch Google Books metadata.");
       setIsFetchingHardcover(false);
       onUpdateBook({ id: bookId, coverLoading: false });
       return;
@@ -331,9 +331,9 @@ export function BookContextMenu({
                 {isGeneratingCover ? <span className="book-cover-spinner" /> : null}
                 {isGeneratingCover ? "Generating..." : "Generate Cover"}
               </button>
-              <button className="book-cover-generate secondary" onClick={fetchFromHardcover} disabled={isFetchingHardcover}>
-                {isFetchingHardcover ? <span className="book-cover-spinner" /> : null}
-                {isFetchingHardcover ? "Fetching..." : "Fetch from Hardcover"}
+              <button className="book-cover-generate secondary" onClick={fetchFromGoogleBooks} disabled={isFetchingGoogleBooks}>
+                {isFetchingGoogleBooks ? <span className="book-cover-spinner" /> : null}
+                {isFetchingGoogleBooks ? "Fetching..." : "Fetch from Google Books"}
               </button>
             </div>
           ) : null}
