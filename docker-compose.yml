@@ -16,13 +16,4 @@ services:
     volumes:
       - /volume1/Docker/chapterchase/data:/data
       - /volume1/home/gr00t/Books:/library:ro
-      - /volume3/home/gr00t/Books:/library:ro
     restart: unless-stopped
-
-volumes:
-  books-smb:
-    driver: local
-    driver_opts:
-      type: cifs
-      device: "//10.0.0.55/home/Books"
-      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,ro,iocharset=utf8"
