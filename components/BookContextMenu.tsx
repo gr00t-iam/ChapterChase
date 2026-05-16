@@ -3,6 +3,7 @@
 import { MoreVertical } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { LibraryBookView } from "@/components/LibraryBooksContext";
 import { removeLocalSourceBook } from "@/lib/local-library";
 import { downloadBookForOffline, removeOfflineBook } from "@/lib/offline-library";
@@ -36,14 +37,15 @@ export function BookContextMenu({
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [isFetchingHardcover, setIsFetchingHardcover] = useState(false);
   const [coverError, setCoverError] = useState("");
-  const [menuOffsetX, setMenuOffsetX] = useState(0);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [toast, setToast] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function close(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setIsOpen(false);
       }
     }
@@ -56,16 +58,34 @@ export function BookContextMenu({
     if (!isOpen) {
       return undefined;
     }
-    const frame = window.requestAnimationFrame(() => {
+    function positionMenu() {
+      const triggerRect = rootRef.current?.getBoundingClientRect();
       const rect = menuRef.current?.getBoundingClientRect();
-      if (!rect) {
+      if (!triggerRect || !rect) {
         return;
       }
 
-      setMenuOffsetX(rect.left < 0 ? Math.ceil(Math.abs(rect.left) + 8) : 0);
-    });
+      const viewportPadding = 8;
+      const preferredLeft = triggerRect.right - rect.width;
+      const preferredTop = triggerRect.bottom + 6;
+      const maxLeft = window.innerWidth - rect.width - viewportPadding;
+      const maxTop = window.innerHeight - rect.height - viewportPadding;
 
-    return () => window.cancelAnimationFrame(frame);
+      setMenuPosition({
+        left: Math.max(viewportPadding, Math.min(preferredLeft, maxLeft)),
+        top: Math.max(viewportPadding, Math.min(preferredTop, maxTop)),
+      });
+    }
+
+    const frame = window.requestAnimationFrame(positionMenu);
+    window.addEventListener("resize", positionMenu);
+    window.addEventListener("scroll", positionMenu, true);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", positionMenu);
+      window.removeEventListener("scroll", positionMenu, true);
+    };
   }, [isOpen, isEditingCover]);
 
   async function toggleWantToRead(event: MouseEvent<HTMLButtonElement>) {
@@ -74,7 +94,6 @@ export function BookContextMenu({
     const nextValue = !wantToRead;
     onToggleWantToRead(bookId, nextValue);
     setIsOpen(false);
-    setMenuOffsetX(0);
     if (isLocalOnly) {
       return;
     }
@@ -91,7 +110,6 @@ export function BookContextMenu({
     const nextRead = !isRead;
     onUpdateProgressState(bookId, nextRead);
     setIsOpen(false);
-    setMenuOffsetX(0);
     if (isLocalOnly) {
       return;
     }
@@ -107,7 +125,6 @@ export function BookContextMenu({
     event.stopPropagation();
     onUpdateProgressState(bookId, false);
     setIsOpen(false);
-    setMenuOffsetX(0);
     if (isLocalOnly) {
       return;
     }
@@ -147,7 +164,6 @@ export function BookContextMenu({
     setIsEditingCover(false);
     setCoverPrompt("");
     setIsOpen(false);
-    setMenuOffsetX(0);
   }
 
   async function fetchFromHardcover(event: MouseEvent<HTMLButtonElement>) {
@@ -195,7 +211,6 @@ export function BookContextMenu({
     setIsFetchingHardcover(false);
     setIsEditingCover(false);
     setIsOpen(false);
-    setMenuOffsetX(0);
   }
 
   async function toggleOffline(event: MouseEvent<HTMLButtonElement>) {
@@ -208,7 +223,6 @@ export function BookContextMenu({
     const nextOfflineState = !offlineAvailable;
     onOfflineStateChange?.(bookId, nextOfflineState);
     setIsOpen(false);
-    setMenuOffsetX(0);
 
     try {
       if (offlineAvailable) {
@@ -232,7 +246,6 @@ export function BookContextMenu({
 
     onRemoveBook?.(bookId);
     setIsOpen(false);
-    setMenuOffsetX(0);
 
     if (isLocalOnly) {
       await removeLocalSourceBook(bookId).catch(() => undefined);
@@ -257,7 +270,6 @@ export function BookContextMenu({
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        setMenuOffsetX(0);
         setIsOpen(true);
       }}
     >
@@ -267,18 +279,24 @@ export function BookContextMenu({
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          setMenuOffsetX(0);
           setIsOpen((current) => !current);
         }}
       >
         <MoreVertical size={16} />
       </button>
-      {isOpen ? (
+      {isOpen && typeof document !== "undefined" ? createPortal(
         <div
           className="book-context-menu"
           ref={menuRef}
-          style={{ transform: menuOffsetX ? `translateX(${menuOffsetX}px)` : undefined }}
-          onClick={(event) => event.preventDefault()}
+          style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
         >
           {!isRead ? <button onClick={markReadState}>Mark as Read</button> : null}
           <button onClick={markUnread}>Mark as Unread</button>
@@ -319,7 +337,8 @@ export function BookContextMenu({
               </button>
             </div>
           ) : null}
-        </div>
+        </div>,
+        document.body
       ) : null}
       {toast ? <div className="book-context-toast">{toast}</div> : null}
     </div>
