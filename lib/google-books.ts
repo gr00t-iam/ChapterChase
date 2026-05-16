@@ -86,7 +86,8 @@ async function searchGoogleBooks(
     });
 
     if (!response.ok) {
-      throw new Error(`Google Books API returned ${response.status}.`);
+      const text = await response.text().catch(() => "(unable to read error body)");
+      throw new Error(`Google Books API returned ${response.status}: ${text}`);
     }
 
     const payload = (await response.json()) as GoogleBooksResponse;
@@ -119,5 +120,35 @@ function normalizeIsbn(isbn: string | null | undefined) {
 
 function cleanText(value: string | null | undefined) {
   const trimmed = value?.trim();
-  return trimmed || undefined;
+  if (!trimmed) return undefined;
+  return decodeHtmlEntities(trimmed);
+}
+
+function decodeHtmlEntities(text: string): string {
+  const map: { [key: string]: string } = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&#8216;": "'", // left single quote
+    "&#8217;": "'", // right single quote / apostrophe
+    "&#8220;": '"', // left double quote
+    "&#8221;": '"', // right double quote
+    "&ndash;": "–",
+    "&mdash;": "—",
+    "&hellip;": "…",
+  };
+
+  let result = text;
+  for (const [entity, char] of Object.entries(map)) {
+    result = result.split(entity).join(char);
+  }
+
+  // Also handle numeric entities like &#123;
+  result = result.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
+  // And hex entities like &#x1F;
+  result = result.replace(/&#x([0-9a-f]+);/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+  return result;
 }
