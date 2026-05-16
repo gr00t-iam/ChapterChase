@@ -1,15 +1,15 @@
 import { requireAdmin } from "@/lib/auth";
 import { downloadCoverImageWithDiagnostics } from "@/lib/covers";
 import { prisma } from "@/lib/db";
-import { fetchHardcoverMetadata } from "@/lib/hardcover";
+import { fetchGoogleBooksMetadata } from "@/lib/google-books";
 import { finishMetadataActivity, startMetadataActivity, updateMetadataActivity } from "@/lib/scan-activity";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
   await requireAdmin();
-  if (!process.env.HARDCOVER_API_KEY?.trim()) {
-    return Response.json({ error: "HARDCOVER_API_KEY is not configured." }, { status: 400 });
+  if (!process.env.GOOGLE_BOOKS_API_KEY?.trim()) {
+    return Response.json({ error: "GOOGLE_BOOKS_API_KEY is not configured." }, { status: 400 });
   }
 
   const books = await prisma.book.findMany({
@@ -34,7 +34,7 @@ export async function POST() {
   for (const [index, book] of books.entries()) {
     updateMetadataActivity(index, books.length, book.title);
     try {
-      const metadata = await fetchHardcoverMetadata(book);
+      const metadata = await fetchGoogleBooksMetadata(book);
       if (metadata) {
         let coverPath: string | undefined;
         let coverError: string | undefined;
@@ -53,7 +53,7 @@ export async function POST() {
             ...(coverPath ? { coverPath } : {}),
             metadataJson: JSON.stringify({
               ...parseMetadataJson(book.metadataJson),
-              hardcover: {
+              googleBooks: {
                 title: metadata.title,
                 description: metadata.description,
                 releaseDate: metadata.publishedDate,
