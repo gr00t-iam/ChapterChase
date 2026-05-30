@@ -21,6 +21,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=file:/data/chapterchase.db
 ENV CHAPTERCHASE_DATA_DIR=/data
+# sherpa-onnx-node depends on shared libraries shipped in the platform packages.
+# Make them discoverable at runtime for the Node addon loader.
+ENV LD_LIBRARY_PATH=/app/node_modules/sherpa-onnx-linux-x64:/app/node_modules/sherpa-onnx-linux-arm64:$LD_LIBRARY_PATH
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/* \
   && addgroup --system --gid 1001 nodejs \
