@@ -2064,7 +2064,6 @@ select {
 .reader-shell[data-sprint-active="true"] .reader-tts-panel,
 .reader-shell[data-sprint-active="true"] .reader-sprint-sidebar,
 .reader-shell[data-sprint-active="true"] .xray-panel,
-.reader-shell[data-sprint-active="true"] .quote-share-menu,
 .reader-shell[data-sprint-active="true"] .highlight-popover {
   opacity: 0.3;
 }
@@ -2478,29 +2477,6 @@ select {
 .reading-ruler-close:hover {
   background: rgb(239 68 68 / 0.82);
   color: white;
-}
-
-.quote-share-menu {
-  position: fixed;
-  left: 50%;
-  top: 5rem;
-  z-index: 36;
-  transform: translateX(-50%);
-  border: 1px solid var(--reader-control-border);
-  border-radius: 999px;
-  background: var(--reader-control-bg);
-  padding: 0.35rem;
-  box-shadow: 0 18px 44px rgb(0 0 0 / 0.38);
-  color: var(--reader-control-text);
-  backdrop-filter: blur(16px);
-}
-
-.quote-share-menu button {
-  border-radius: inherit;
-  background: var(--reader-accent);
-  padding: 0.5rem 0.85rem;
-  color: white;
-  font-weight: 800;
 }
 
 .highlight-popover {

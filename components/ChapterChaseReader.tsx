@@ -203,14 +203,12 @@ export default function ChapterChaseReader({
   const [highlighterMode, setHighlighterMode] = useState(false);
   const [readingRulerPinned, setReadingRulerPinned] = useState(false);
   const [rulerPosition, setRulerPosition] = useState<{ x: number; y: number } | null>(null);
-  const [quoteText, setQuoteText] = useState("");
   const [highlightColor, setHighlightColor] = useState(defaultHighlightColor);
   const [highlightPopover, setHighlightPopover] = useState<HighlightPopover | null>(null);
   const [highlightActionPopover, setHighlightActionPopover] = useState<HighlightActionPopover | null>(null);
   const [readerHighlights, setReaderHighlights] = useState<ReaderHighlight[]>([]);
   const [xrayPanel, setXrayPanel] = useState<{ term: string; matches: XRayMatch[]; profile: XRayProfile; tab: "local" | "community" } | null>(null);
   const [sprintState, setSprintState] = useState({ active: false, progress: 0, remainingSeconds: 0 });
-  const [quoteImageUrl, setQuoteImageUrl] = useState<string | null>(null);
   const [sessionStats, setSessionStats] = useState({ seconds: 0, words: 0, pages: 0 });
   const flipbookHostRef = useRef<HTMLDivElement | null>(null);
   const readerStageRef = useRef<HTMLElement | null>(null);
@@ -231,6 +229,7 @@ export default function ChapterChaseReader({
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
   const pendingHighlightRef = useRef<Pick<HighlightPopover, "pageIndex" | "text" | "occurrence"> | null>(null);
   const pendingHighlightCreatedAtRef = useRef(0);
+  const ignoreNextHighlightColorClickRef = useRef(false);
   const autoAdvanceFallbackTimerRef = useRef<number | null>(null);
   const pendingAutoReadPageRef = useRef<number | null>(null);
   const speechTimerRef = useRef<number | null>(null);
@@ -558,7 +557,6 @@ export default function ChapterChaseReader({
     function updateSelection() {
       const selection = window.getSelection();
       const selectedText = selection?.toString().trim() ?? "";
-      setQuoteText(selectedText.length > 8 ? selectedText.slice(0, 500) : "");
 
       if (!selection || selection.rangeCount === 0 || selectedText.length < 2) {
         setHighlightPopover(null);
@@ -582,18 +580,23 @@ export default function ChapterChaseReader({
         return;
       }
 
-      const occurrence = getSelectionOccurrence(textElement, range, selectedText);
+      const selectionDetails = getSelectionDetails(textElement, range);
+      if (!selectionDetails || selectionDetails.text.length < 2) {
+        setHighlightPopover(null);
+        return;
+      }
+
       pendingHighlightRef.current = {
         pageIndex: selectedPageIndex,
-        text: selectedText,
-        occurrence,
+        text: selectionDetails.text,
+        occurrence: selectionDetails.occurrence,
       };
       pendingHighlightCreatedAtRef.current = Date.now();
 
       setHighlightPopover({
         pageIndex: selectedPageIndex,
-        text: selectedText,
-        occurrence,
+        text: selectionDetails.text,
+        occurrence: selectionDetails.occurrence,
         x: Math.max(8, Math.min(window.innerWidth - 168, rect.left + rect.width / 2 - 84)),
         y: Math.max(58, rect.top - 48),
       });
@@ -1177,49 +1180,39 @@ export default function ChapterChaseReader({
   const minutesLeft = Math.max(1, Math.round(remainingWords / averageWpm));
   const finishPrediction = formatFinishPrediction(minutesLeft);
 
-  const shareQuoteAsImage = useCallback(async () => {
-    if (!quoteText) {
-      return;
-    }
-    const dataUrl = await renderQuoteImage(quoteText, title);
-    setQuoteImageUrl(dataUrl);
-    await fetch("/api/annotations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bookId, quote: quoteText, color: readerTheme === "scroll" ? "#c0842d" : "#facc15" }),
-    }).catch(() => undefined);
-  }, [bookId, quoteText, readerTheme, title]);
-
   const saveHighlight = useCallback((color = highlightColor) => {
-    const pendingHighlight = pendingHighlightRef.current ?? highlightPopover;
+    const pendingHighlight = pendingHighlightRef.current ?? highlightPopover ?? getPendingHighlightFromCurrentSelection();
     if (!pendingHighlight) {
       return;
     }
 
-    const existingHighlight = readerHighlights.find(
+    const matchingAnchorHighlights = readerHighlights.filter(
       (highlight) =>
         highlight.pageIndex === pendingHighlight.pageIndex &&
         highlight.occurrence === pendingHighlight.occurrence &&
-        highlight.text === pendingHighlight.text &&
-        highlight.color === color
+        highlight.text === pendingHighlight.text
     );
+    const existingHighlight = matchingAnchorHighlights.find((highlight) => highlight.color === color);
 
     if (existingHighlight) {
-      const nextHighlights = readerHighlights.filter((highlight) => highlight.id !== existingHighlight.id);
+      const removedHighlights = matchingAnchorHighlights;
+      const nextHighlights = readerHighlights.filter((highlight) => !removedHighlights.some((removed) => removed.id === highlight.id));
       setReaderHighlights(nextHighlights);
       saveBookHighlights(bookId, nextHighlights);
       if (!isLocalBook) {
-        fetch("/api/annotations", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: existingHighlight.id,
-            bookId,
-            quote: existingHighlight.text,
-            color: existingHighlight.color,
-            locator: JSON.stringify({ pageIndex: existingHighlight.pageIndex, occurrence: existingHighlight.occurrence }),
-          }),
-        }).catch(() => undefined);
+        for (const removedHighlight of removedHighlights) {
+          fetch("/api/annotations", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: removedHighlight.id,
+              bookId,
+              quote: removedHighlight.text,
+              color: removedHighlight.color,
+              locator: JSON.stringify({ pageIndex: removedHighlight.pageIndex, occurrence: removedHighlight.occurrence }),
+            }),
+          }).catch(() => undefined);
+        }
       }
       setHighlightPopover(null);
       pendingHighlightRef.current = null;
@@ -1237,11 +1230,27 @@ export default function ChapterChaseReader({
     };
 
     setReaderHighlights((current) => {
-      const nextHighlights = [...current, nextHighlight];
+      const nextHighlights = [
+        ...current.filter((highlight) => !matchingAnchorHighlights.some((matched) => matched.id === highlight.id)),
+        nextHighlight,
+      ];
       saveBookHighlights(bookId, nextHighlights);
       return nextHighlights;
     });
     if (!isLocalBook) {
+      for (const removedHighlight of matchingAnchorHighlights) {
+        fetch("/api/annotations", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: removedHighlight.id,
+            bookId,
+            quote: removedHighlight.text,
+            color: removedHighlight.color,
+            locator: JSON.stringify({ pageIndex: removedHighlight.pageIndex, occurrence: removedHighlight.occurrence }),
+          }),
+        }).catch(() => undefined);
+      }
       fetch("/api/annotations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1286,6 +1295,14 @@ export default function ChapterChaseReader({
       saveHighlight(highlightColor);
     },
     [highlightColor, saveHighlight]
+  );
+
+  const applyHighlightColor = useCallback(
+    (color: string) => {
+      setHighlightColor(color);
+      saveHighlight(color);
+    },
+    [saveHighlight]
   );
 
   const removeHighlight = useCallback((highlightId: string) => {
@@ -1550,11 +1567,6 @@ export default function ChapterChaseReader({
             </button>
           </div>
         ) : null}
-        {quoteText ? (
-          <div className="quote-share-menu">
-            <button onClick={shareQuoteAsImage}>Share as Image</button>
-          </div>
-        ) : null}
         {highlightPopover ? (
           <div
             className="highlight-popover"
@@ -1572,11 +1584,26 @@ export default function ChapterChaseReader({
                   aria-label={`${color.label} highlight`}
                   title={color.label}
                   style={{ backgroundColor: color.value }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onTouchStart={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setHighlightColor(color.value);
-                    saveHighlight(color.value);
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    ignoreNextHighlightColorClickRef.current = true;
+                    applyHighlightColor(color.value);
+                  }}
+                  onTouchStart={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    ignoreNextHighlightColorClickRef.current = true;
+                    applyHighlightColor(color.value);
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (ignoreNextHighlightColorClickRef.current) {
+                      ignoreNextHighlightColorClickRef.current = false;
+                      return;
+                    }
+                    applyHighlightColor(color.value);
                   }}
                 />
               ))}
@@ -1653,12 +1680,6 @@ export default function ChapterChaseReader({
               )}
             </div>
           </aside>
-        ) : null}
-        {quoteImageUrl ? (
-          <div className="quote-preview" onClick={() => setQuoteImageUrl(null)}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={quoteImageUrl} alt="Generated quote card" />
-          </div>
         ) : null}
         {isPdf && safePages[0]?.loading ? (
           <div className="reader-pdf-loading" role="status">
@@ -2242,48 +2263,6 @@ function createXraySnippet(text: string, index: number, length: number) {
   return `${prefix}${text.slice(start, end).replace(/\s+/g, " ").trim()}${suffix}`;
 }
 
-async function renderQuoteImage(quote: string, title: string) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1200;
-  canvas.height = 630;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    return "";
-  }
-
-  const parchment = new Image();
-  parchment.src = "/scroll-theme.png";
-  await new Promise((resolve) => {
-    parchment.onload = resolve;
-    parchment.onerror = resolve;
-  });
-  ctx.drawImage(parchment, 0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(67, 40, 18, 0.2)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#3a2412";
-  ctx.font = "46px Georgia";
-  wrapCanvasText(ctx, `“${quote}”`, 110, 155, 980, 64);
-  ctx.font = "28px Arial";
-  ctx.fillText(`ChapterChase - ${title}`, 110, 540);
-  return canvas.toDataURL("image/png");
-}
-
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
-  const words = text.split(/\s+/);
-  let line = "";
-  for (const word of words) {
-    const testLine = `${line}${word} `;
-    if (ctx.measureText(testLine).width > maxWidth && line) {
-      ctx.fillText(line, x, y);
-      line = `${word} `;
-      y += lineHeight;
-    } else {
-      line = testLine;
-    }
-  }
-  ctx.fillText(line, x, y);
-}
-
 function getHighlightsStorageKey(bookId: string) {
   return `chapterchase:book:${bookId}:highlights`;
 }
@@ -2353,11 +2332,52 @@ function getSelectedReaderTextElement(selection: Selection) {
   return null;
 }
 
-function getSelectionOccurrence(textElement: HTMLElement, range: Range, selectedText: string) {
+function getPendingHighlightFromCurrentSelection(): Pick<HighlightPopover, "pageIndex" | "text" | "occurrence"> | null {
+  const selection = window.getSelection();
+  const selectedText = selection?.toString().trim() ?? "";
+  if (!selection || selection.rangeCount === 0 || selectedText.length < 2) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const textElement = getSelectedReaderTextElement(selection);
+  const article = textElement?.closest<HTMLElement>(".reader-book-page");
+  const selectedPageIndex = Number(article?.dataset.pageIndex);
+  if (!textElement || !Number.isFinite(selectedPageIndex)) {
+    return null;
+  }
+
+  const details = getSelectionDetails(textElement, range);
+  if (!details || details.text.length < 2) {
+    return null;
+  }
+
+  return {
+    pageIndex: selectedPageIndex,
+    text: details.text,
+    occurrence: details.occurrence,
+  };
+}
+
+function getSelectionDetails(textElement: HTMLElement, range: Range): { text: string; occurrence: number } | null {
   const preSelectionRange = range.cloneRange();
   preSelectionRange.selectNodeContents(textElement);
   preSelectionRange.setEnd(range.startContainer, range.startOffset);
-  return countOccurrences(preSelectionRange.toString(), selectedText);
+
+  const fullText = textElement.textContent ?? "";
+  const startOffset = preSelectionRange.toString().length;
+  const rangeText = range.toString();
+  const rawText = fullText.slice(startOffset, startOffset + rangeText.length);
+  const leadingWhitespace = rawText.match(/^\s*/)?.[0].length ?? 0;
+  const trailingWhitespace = rawText.match(/\s*$/)?.[0].length ?? 0;
+  const text = rawText.slice(leadingWhitespace, rawText.length - trailingWhitespace);
+
+  if (!text) {
+    return null;
+  }
+
+  const occurrence = countOccurrences(fullText.slice(0, startOffset + leadingWhitespace), text);
+  return { text, occurrence };
 }
 
 function countOccurrences(haystack: string, needle: string) {
