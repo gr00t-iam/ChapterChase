@@ -1,6 +1,7 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
+import { createClientId } from "@/lib/client-id";
 
 export type LocalLibraryBook = {
   id: string;
@@ -52,7 +53,7 @@ export const localLibraryChangedEvent = "chapterchase:local-library-changed";
 
 export async function addLocalSourceBook(file: File) {
   const now = new Date().toISOString();
-  const id = `local-${crypto.randomUUID()}`;
+  const id = createClientId("local");
   const book: LocalLibraryBook = {
     id,
     title: titleFromFileName(file.name),

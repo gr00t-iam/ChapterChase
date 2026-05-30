@@ -9,12 +9,20 @@ type PendingProgress = {
 const dbName = "chapterchase-offline";
 const storeName = "pending-progress";
 
+export function getServiceWorkerContainer() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return null;
+  }
+  return navigator.serviceWorker;
+}
+
 export async function registerChapterChaseServiceWorker() {
-  if (!("serviceWorker" in navigator)) {
+  const serviceWorker = getServiceWorkerContainer();
+  if (!serviceWorker) {
     return;
   }
 
-  const registration = await navigator.serviceWorker.register("/sw.js").catch(() => null);
+  const registration = await serviceWorker.register("/sw.js").catch(() => null);
   if (registration && "sync" in registration) {
     await (registration as ServiceWorkerRegistration & { sync: { register: (tag: string) => Promise<void> } }).sync
       .register("chapterchase-sync-progress")
@@ -23,15 +31,20 @@ export async function registerChapterChaseServiceWorker() {
 }
 
 export async function cacheCurrentReading(bookId: string) {
-  if (!("serviceWorker" in navigator)) {
+  const serviceWorker = getServiceWorkerContainer();
+  if (!serviceWorker) {
     return;
   }
-  const registration = await navigator.serviceWorker.ready.catch(() => null);
+  const registration = await serviceWorker.ready.catch(() => null);
   registration?.active?.postMessage({ type: "CACHE_READING", bookId });
 }
 
 export async function cacheWantToReadList() {
-  const registration = await navigator.serviceWorker.ready.catch(() => null);
+  const serviceWorker = getServiceWorkerContainer();
+  if (!serviceWorker) {
+    return;
+  }
+  const registration = await serviceWorker.ready.catch(() => null);
   registration?.active?.postMessage({ type: "CACHE_WANT_TO_READ" });
 }
 

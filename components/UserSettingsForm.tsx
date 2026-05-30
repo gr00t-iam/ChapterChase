@@ -3,6 +3,7 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { createClientId } from "@/lib/client-id";
 import { defaultKokoroVoiceId, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 
 type ReadingProfile = {
@@ -81,7 +82,7 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
       ...current,
       readingProfiles: [
         ...current.readingProfiles,
-        { id: crypto.randomUUID(), name: `${themeLabel(theme)} Profile`, theme, fontScale: 1, lineHeight: 1.6 },
+        { id: createClientId("reading-profile"), name: `${themeLabel(theme)} Profile`, theme, fontScale: 1, lineHeight: 1.6 },
       ],
     }));
   }

@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Highlighter, Pause
 import { PageFlip } from "page-flip";
 import { ReadingSprintTimer } from "@/components/ReadingSprintTimer";
 import type { ReaderPage } from "@/lib/book-cache";
+import { createClientId } from "@/lib/client-id";
 import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
@@ -1221,7 +1222,7 @@ export default function ChapterChaseReader({
     }
 
     const nextHighlight: ReaderHighlight = {
-      id: crypto.randomUUID(),
+      id: createClientId("reader-highlight"),
       pageIndex: pendingHighlight.pageIndex,
       text: pendingHighlight.text,
       occurrence: pendingHighlight.occurrence,

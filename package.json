@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:client-runtime": "tsx scripts/test-client-runtime.ts",
     "db:generate": "prisma generate",
     "db:push": "node scripts/init-db.mjs",
     "tts:download": "node scripts/download-kokoro-tts.mjs",
