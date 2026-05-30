@@ -28,6 +28,7 @@
 # local secrets (do not commit)
 /secrets/*.env
 !/secrets/*.env.example
+/portainer.env
 
 # misc
 .DS_Store
