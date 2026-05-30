@@ -1803,7 +1803,7 @@ function countTrackableWords(text: string) {
   return text.split(/(\s+)/).filter(isTrackableWordToken).length;
 }
 
-function splitTextIntoTtsChunks(text: string, maxChars = 520): TtsChunk[] {
+function splitTextIntoTtsChunks(text: string, maxChars = 260): TtsChunk[] {
   if (!text.trim()) {
     return [];
   }
@@ -2001,38 +2001,71 @@ function loadLocalReaderSettings(): LocalReaderSettings {
 
 async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal): Promise<Blob> {
   const body = JSON.stringify({ text, voiceId });
+  const requestController = new AbortController();
+  const timeout = window.setTimeout(() => requestController.abort("timeout"), 25000);
+  const abortRequest = () => requestController.abort(signal.reason ?? "aborted");
+  if (signal.aborted) {
+    abortRequest();
+  } else {
+    signal.addEventListener("abort", abortRequest, { once: true });
+  }
+
   if (typeof window.fetch === "function") {
-    const response = await window.fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-      signal,
-    });
+    try {
+      const response = await window.fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: requestController.signal,
+      });
 
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(payload?.error ?? "Unable to synthesize speech.");
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Unable to synthesize speech.");
+      }
+
+      return response.blob();
+    } catch (error) {
+      if (requestController.signal.aborted && !signal.aborted) {
+        throw new Error("Kokoro TTS took too long to generate audio. Try again after the first model warm-up finishes, or reduce the page size.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abortRequest);
     }
-
-    return response.blob();
   }
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
+    request.timeout = 25000;
     request.open("POST", "/api/tts");
     request.responseType = "blob";
     request.setRequestHeader("Content-Type", "application/json");
     request.onload = () => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abortRequest);
       if (request.status >= 200 && request.status < 300) {
         resolve(request.response);
         return;
       }
       reject(new Error("Unable to synthesize speech."));
     };
-    request.onerror = () => reject(new Error("Unable to synthesize speech."));
+    request.onerror = () => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abortRequest);
+      reject(new Error("Unable to synthesize speech."));
+    };
+    request.ontimeout = () => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abortRequest);
+      reject(new Error("Kokoro TTS took too long to generate audio. Try again after the first model warm-up finishes, or reduce the page size."));
+    };
     signal.addEventListener(
       "abort",
       () => {
+        window.clearTimeout(timeout);
+        signal.removeEventListener("abort", abortRequest);
         request.abort();
         reject(new DOMException("Speech request was aborted.", "AbortError"));
       },

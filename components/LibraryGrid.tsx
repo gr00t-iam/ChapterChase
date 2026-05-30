@@ -11,6 +11,7 @@ import { BookContextMenu } from "@/components/BookContextMenu";
 import { LibraryBooksProvider, useLibraryBooks, type LibraryBookView } from "@/components/LibraryBooksContext";
 
 type LibraryBook = LibraryBookView;
+type FormatFilter = "all" | "EPUB" | "PDF";
 
 type ShelfItem =
   | { type: "top"; books: Array<{ book: LibraryBook; progressPercent: number }> }
@@ -33,8 +34,12 @@ function VirtualizedLibraryGrid() {
   const openTimerRef = useRef<number | null>(null);
   const router = useRouter();
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>("all");
   const { books, toggleWantToRead, updateBook, updateProgressState, setOfflineState, removeBook } = useLibraryBooks();
-  const rows = useMemo(() => buildShelfRows(books), [books]);
+  const epubBooks = useMemo(() => books.filter((book) => normalizeFormat(book.format) === "EPUB"), [books]);
+  const pdfBooks = useMemo(() => books.filter((book) => normalizeFormat(book.format) === "PDF"), [books]);
+  const filteredBooks = formatFilter === "EPUB" ? epubBooks : formatFilter === "PDF" ? pdfBooks : books;
+  const rows = useMemo(() => buildShelfRows(filteredBooks), [filteredBooks]);
 
   useEffect(() => {
     return () => {
@@ -64,48 +69,103 @@ function VirtualizedLibraryGrid() {
   }
 
   return (
-    <div className="wood-library-shell">
-      <div ref={parentRef} className="wood-library-viewport">
-        <div
-          className="wood-library-virtual-space"
-          style={{
-            height: `${rowVirtualizer.getTotalSize()}px`,
-          }}
-        >
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => (
-            <ShelfRow
-              key={virtualRow.key}
-              item={rows[virtualRow.index]}
-              openingBookId={openingBookId}
-              onOpenBook={(bookId) => {
-                setOpeningBookId(bookId);
-                if (openTimerRef.current) {
-                  window.clearTimeout(openTimerRef.current);
-                }
-                openTimerRef.current = window.setTimeout(() => {
-                  openTimerRef.current = null;
-                  router.push(`/reader/${bookId}`);
-                }, 680);
-              }}
-              onAnimationEnd={(bookId) => {
-                if (openTimerRef.current) {
-                  window.clearTimeout(openTimerRef.current);
-                  openTimerRef.current = null;
-                }
-                router.push(`/reader/${bookId}`);
-              }}
-              onToggleWantToRead={toggleWantToRead}
-              onUpdateBook={updateBook}
-              onUpdateProgressState={updateProgressState}
-              onOfflineStateChange={setOfflineState}
-              onRemoveBook={removeBook}
-              style={{
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            />
-          ))}
+    <>
+      <FormatFilterBar
+        activeFilter={formatFilter}
+        allCount={books.length}
+        epubCount={epubBooks.length}
+        pdfCount={pdfBooks.length}
+        onChange={(nextFilter) => {
+          setOpeningBookId(null);
+          setFormatFilter(nextFilter);
+          parentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
+
+      <div className="wood-library-shell">
+        <div ref={parentRef} className="wood-library-viewport">
+          <div
+            className="wood-library-virtual-space"
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+            }}
+          >
+            {rows.length ? (
+              rowVirtualizer.getVirtualItems().map((virtualRow) => (
+                <ShelfRow
+                  key={virtualRow.key}
+                  item={rows[virtualRow.index]}
+                  openingBookId={openingBookId}
+                  onOpenBook={(bookId) => {
+                    setOpeningBookId(bookId);
+                    if (openTimerRef.current) {
+                      window.clearTimeout(openTimerRef.current);
+                    }
+                    openTimerRef.current = window.setTimeout(() => {
+                      openTimerRef.current = null;
+                      router.push(`/reader/${bookId}`);
+                    }, 680);
+                  }}
+                  onAnimationEnd={(bookId) => {
+                    if (openTimerRef.current) {
+                      window.clearTimeout(openTimerRef.current);
+                      openTimerRef.current = null;
+                    }
+                    router.push(`/reader/${bookId}`);
+                  }}
+                  onToggleWantToRead={toggleWantToRead}
+                  onUpdateBook={updateBook}
+                  onUpdateProgressState={updateProgressState}
+                  onOfflineStateChange={setOfflineState}
+                  onRemoveBook={removeBook}
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                />
+              ))
+            ) : (
+              <p className="format-empty-state wood-format-empty">No books in this format.</p>
+            )}
+          </div>
         </div>
+      </div>
+    </>
+  );
+}
+
+function FormatFilterBar({
+  activeFilter,
+  allCount,
+  epubCount,
+  pdfCount,
+  onChange,
+}: {
+  activeFilter: FormatFilter;
+  allCount: number;
+  epubCount: number;
+  pdfCount: number;
+  onChange: (nextFilter: FormatFilter) => void;
+}) {
+  return (
+    <div className="format-filter-bar wood-format-filter-bar" aria-label="Filter books by format">
+      <div className="format-filter-pills">
+        <button className={`format-pill ${activeFilter === "all" ? "active" : ""}`} onClick={() => onChange("all")}>
+          All
+          <span className="format-pill-count">{allCount}</span>
+        </button>
+        {epubCount > 0 ? (
+          <button className={`format-pill epub ${activeFilter === "EPUB" ? "active" : ""}`} onClick={() => onChange("EPUB")}>
+            EPUB
+            <span className="format-pill-count">{epubCount}</span>
+          </button>
+        ) : null}
+        {pdfCount > 0 ? (
+          <button className={`format-pill pdf ${activeFilter === "PDF" ? "active" : ""}`} onClick={() => onChange("PDF")}>
+            PDF
+            <span className="format-pill-count">{pdfCount}</span>
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -375,6 +435,10 @@ function getHexBrightness(hex: string) {
 }
 
 function buildShelfRows(books: LibraryBook[]): ShelfItem[] {
+  if (!books.length) {
+    return [];
+  }
+
   const rows: ShelfItem[] = [];
   const spineBuffer: LibraryBook[] = [];
   const currentlyReading = books
@@ -411,6 +475,10 @@ function buildShelfRows(books: LibraryBook[]): ShelfItem[] {
 function normalizeProgress(percent: number) {
   const normalized = percent <= 1 ? percent * 100 : percent;
   return Math.max(0, Math.min(100, normalized));
+}
+
+function normalizeFormat(format: string | null | undefined) {
+  return format?.trim().toUpperCase();
 }
 
 function compareRecentlyOpened(
