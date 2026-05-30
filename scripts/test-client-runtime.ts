@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createClientId } from "../lib/client-id";
 import { getServiceWorkerContainer } from "../lib/offline-client";
+import { defaultTtsChunkMaxCharacters, splitTextIntoTtsChunks } from "../lib/tts-client";
 
 const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
 
@@ -39,3 +40,15 @@ if (originalCryptoDescriptor) {
 }
 
 assert.equal(getServiceWorkerContainer(), null, "service worker helpers should no-op outside supported browser contexts");
+
+const chunks = splitTextIntoTtsChunks("one two three four five six seven eight nine ten", 18);
+let expectedWordOffset = 0;
+for (const chunk of chunks) {
+  assert.equal(chunk.wordOffset, expectedWordOffset, "TTS chunk offsets should keep word tracking aligned across generated audio chunks");
+  expectedWordOffset += chunk.wordCount;
+}
+assert.equal(expectedWordOffset, 10, "TTS chunks should preserve the source word count");
+assert.ok(
+  splitTextIntoTtsChunks("word ".repeat(80)).every((chunk) => chunk.text.length <= defaultTtsChunkMaxCharacters),
+  "default TTS chunks should stay short enough for quick first audio generation"
+);

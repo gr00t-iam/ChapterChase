@@ -11,6 +11,12 @@ import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
 import { defaultKokoroVoiceId, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import {
+  splitTextIntoTtsChunks,
+  ttsChunkRequestTimeoutMs,
+  ttsInitialRequestTimeoutMs,
+  type TtsChunk,
+} from "@/lib/tts-client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 type ReaderProps = {
@@ -74,12 +80,6 @@ type XRayProfile = {
 type SpeakingWord = {
   pageIndex: number;
   wordIndex: number;
-};
-
-type TtsChunk = {
-  text: string;
-  wordOffset: number;
-  wordCount: number;
 };
 
 type ReaderWordTracker = {
@@ -758,7 +758,7 @@ export default function ChapterChaseReader({
 
       try {
         const shouldTrackWords = !safePages[clampedPageIndex]?.image;
-        const chunks = shouldTrackWords ? splitTextIntoTtsChunks(text) : [{ text, wordOffset: 0, wordCount: 0 }];
+        const chunks = splitTextIntoTtsChunks(text).map((chunk) => (shouldTrackWords ? chunk : { ...chunk, wordCount: 0 }));
         speechChunkMetaRef.current = { pageIndex: clampedPageIndex, chunks, index: 0 };
 
         const playChunk = async (chunkIndex: number) => {
@@ -786,7 +786,12 @@ export default function ChapterChaseReader({
             blob = await prefetch.promise;
             speechPrefetchRef.current = null;
           } else {
-            blob = await fetchTtsAudioBlob(chunk.text, ttsVoice, controller.signal);
+            blob = await fetchTtsAudioBlob(
+              chunk.text,
+              ttsVoice,
+              controller.signal,
+              chunkIndex === 0 ? ttsInitialRequestTimeoutMs : ttsChunkRequestTimeoutMs
+            );
           }
 
           if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
@@ -798,8 +803,10 @@ export default function ChapterChaseReader({
             speechPrefetchRef.current = {
               index: nextIndex,
               controller: nextController,
-              promise: fetchTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal),
+              promise: fetchTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal, ttsChunkRequestTimeoutMs),
             };
+          } else if (nextIndex >= meta.chunks.length && clampedPageIndex < pageCount - 1) {
+            void prefetchFirstTtsChunkForPage(clampedPageIndex + 1);
           }
 
           if (speechAudioUrlRef.current) {
@@ -848,6 +855,17 @@ export default function ChapterChaseReader({
         }
       }
     }, 100);
+
+    async function prefetchFirstTtsChunkForPage(nextPageIndex: number) {
+      const nextText = isPdf ? await extractPdfText(nextPageIndex) : (safePages[nextPageIndex]?.text ?? "");
+      const firstChunk = splitTextIntoTtsChunks(nextText)[0];
+      if (!firstChunk?.text) {
+        return;
+      }
+
+      const controller = new AbortController();
+      await fetchTtsAudioBlob(firstChunk.text, ttsVoice, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
+    }
   }, [
     advanceReadingAfterSpeech,
     cleanupCurrentSpeechAudio,
@@ -865,6 +883,15 @@ export default function ChapterChaseReader({
   useEffect(() => {
     readCurrentPageRef.current = readCurrentPage;
   }, [readCurrentPage]);
+
+  useEffect(() => {
+    if (!speechSupported) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => warmKokoroTts(ttsVoice), 650);
+    return () => window.clearTimeout(timer);
+  }, [speechSupported, ttsVoice]);
 
   useEffect(() => {
     if (!isPdf) {
@@ -1904,54 +1931,6 @@ function countWords(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-function countTrackableWords(text: string) {
-  return text.split(/(\s+)/).filter(isTrackableWordToken).length;
-}
-
-function splitTextIntoTtsChunks(text: string, maxChars = 260): TtsChunk[] {
-  if (!text.trim()) {
-    return [];
-  }
-
-  const tokens = text.split(/(\s+)/);
-  const chunks: TtsChunk[] = [];
-
-  let current = "";
-  let currentWordCount = 0;
-  let wordOffset = 0;
-
-  const pushCurrent = () => {
-    const chunkText = current.trim();
-    if (!chunkText) {
-      current = "";
-      currentWordCount = 0;
-      return;
-    }
-
-    chunks.push({ text: chunkText, wordOffset, wordCount: currentWordCount });
-    wordOffset += currentWordCount;
-    current = "";
-    currentWordCount = 0;
-  };
-
-  for (const token of tokens) {
-    if (!token) continue;
-
-    const candidate = current + token;
-    if (current && candidate.length > maxChars && current.trim()) {
-      pushCurrent();
-    }
-
-    current += token;
-    if (!/^\s+$/.test(token) && isTrackableWordToken(token)) {
-      currentWordCount += 1;
-    }
-  }
-
-  pushCurrent();
-  return chunks.length ? chunks : [{ text: text.trim(), wordOffset: 0, wordCount: countTrackableWords(text) }];
-}
-
 function isTrackableWordToken(token: string) {
   return /[A-Za-z0-9]/.test(token);
 }
@@ -2111,10 +2090,30 @@ function loadLocalReaderSettings(): LocalReaderSettings {
   }
 }
 
-async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal): Promise<Blob> {
+function warmKokoroTts(voiceId: string) {
+  const body = JSON.stringify({ voiceId });
+  if (typeof window.fetch === "function") {
+    void window
+      .fetch("/api/tts/warmup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      })
+      .catch(() => undefined);
+    return;
+  }
+
+  const request = new XMLHttpRequest();
+  request.open("POST", "/api/tts/warmup");
+  request.setRequestHeader("Content-Type", "application/json");
+  request.send(body);
+}
+
+async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal, timeoutMs = ttsChunkRequestTimeoutMs): Promise<Blob> {
   const body = JSON.stringify({ text, voiceId });
   const requestController = new AbortController();
-  const timeout = window.setTimeout(() => requestController.abort("timeout"), 25000);
+  const timeout = window.setTimeout(() => requestController.abort("timeout"), timeoutMs);
   const abortRequest = () => requestController.abort(signal.reason ?? "aborted");
   if (signal.aborted) {
     abortRequest();
@@ -2139,7 +2138,7 @@ async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSig
       return response.blob();
     } catch (error) {
       if (requestController.signal.aborted && !signal.aborted) {
-        throw new Error("Kokoro TTS took too long to generate audio. Try again after the first model warm-up finishes, or reduce the page size.");
+        throw new Error("Kokoro TTS took too long to generate audio. Try again in a moment while the model finishes warming up.");
       }
       throw error;
     } finally {
@@ -2150,7 +2149,7 @@ async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSig
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.timeout = 25000;
+    request.timeout = timeoutMs;
     request.open("POST", "/api/tts");
     request.responseType = "blob";
     request.setRequestHeader("Content-Type", "application/json");
@@ -2171,7 +2170,7 @@ async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSig
     request.ontimeout = () => {
       window.clearTimeout(timeout);
       signal.removeEventListener("abort", abortRequest);
-      reject(new Error("Kokoro TTS took too long to generate audio. Try again after the first model warm-up finishes, or reduce the page size."));
+      reject(new Error("Kokoro TTS took too long to generate audio. Try again in a moment while the model finishes warming up."));
     };
     signal.addEventListener(
       "abort",

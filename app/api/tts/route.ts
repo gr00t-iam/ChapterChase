@@ -9,6 +9,8 @@ import path from "node:path";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const pendingSyntheses = new Map<string, Promise<Buffer>>();
+
 export async function POST(request: Request) {
   const user = await requireUser();
 
@@ -29,11 +31,7 @@ export async function POST(request: Request) {
     const cachePath = path.join(cacheDir, `kokoro-${cacheKey}.wav`);
 
     const cached = await fs.readFile(cachePath).catch(() => null);
-    const wav = cached ?? (await synthesizeWithSherpaKokoro(normalizedText, resolvedVoice));
-    if (!cached) {
-      await fs.mkdir(cacheDir, { recursive: true }).catch(() => undefined);
-      await fs.writeFile(cachePath, new Uint8Array(wav)).catch(() => undefined);
-    }
+    const wav = cached ?? (await getOrCreateCachedSpeech(cacheKey, cachePath, normalizedText, resolvedVoice));
     return new Response(new Uint8Array(wav), {
       headers: {
         "Content-Type": "audio/wav",
@@ -50,4 +48,22 @@ export async function POST(request: Request) {
       { status }
     );
   }
+}
+
+function getOrCreateCachedSpeech(cacheKey: string, cachePath: string, text: string, voiceId: unknown) {
+  const pending = pendingSyntheses.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const synthesis = synthesizeWithSherpaKokoro(text, voiceId)
+    .then(async (wav) => {
+      await fs.mkdir(path.dirname(cachePath), { recursive: true }).catch(() => undefined);
+      await fs.writeFile(cachePath, new Uint8Array(wav)).catch(() => undefined);
+      return wav;
+    })
+    .finally(() => pendingSyntheses.delete(cacheKey));
+
+  pendingSyntheses.set(cacheKey, synthesis);
+  return synthesis;
 }

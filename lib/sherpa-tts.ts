@@ -10,7 +10,14 @@ const maxTtsCharacters = 12000;
 const requiredModelEntries = ["model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data"] as const;
 
 let cachedTts: { modelDir: string; tts: OfflineTts } | null = null;
+let cachedTtsPromise: Promise<{ modelDir: string; tts: OfflineTts }> | null = null;
 let cachedOfflineTtsCtorPromise: Promise<new (config: unknown) => OfflineTts> | null = null;
+let warmupState:
+  | { status: "idle"; startedAt?: undefined; finishedAt?: undefined; error?: undefined }
+  | { status: "warming"; startedAt: string; finishedAt?: undefined; error?: undefined }
+  | { status: "ready"; startedAt: string; finishedAt: string; error?: undefined }
+  | { status: "error"; startedAt: string; finishedAt: string; error: string } = { status: "idle" };
+let warmupPromise: Promise<void> | null = null;
 
 export class SherpaTtsSetupError extends Error {
   constructor(message: string) {
@@ -44,34 +51,87 @@ export async function synthesizeWithSherpaKokoro(text: string, voice: unknown = 
   return encodeMonoPcm16Wav(audio.samples, audio.sampleRate);
 }
 
+export function startSherpaTtsWarmup(voice: unknown = defaultKokoroVoiceId) {
+  if (warmupPromise && warmupState.status === "warming") {
+    return warmupPromise;
+  }
+  if (warmupState.status === "ready") {
+    return Promise.resolve();
+  }
+
+  const voiceId = resolveKokoroVoiceId(voice);
+  warmupState = { status: "warming", startedAt: new Date().toISOString() };
+  warmupPromise = synthesizeWithSherpaKokoro("Ready.", voiceId)
+    .then(() => {
+      const startedAt = warmupState.startedAt ?? new Date().toISOString();
+      warmupState = { status: "ready", startedAt, finishedAt: new Date().toISOString() };
+    })
+    .catch((error) => {
+      const startedAt = warmupState.startedAt ?? new Date().toISOString();
+      warmupState = {
+        status: "error",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      };
+      warmupPromise = null;
+      throw error;
+    });
+
+  return warmupPromise;
+}
+
+export function getSherpaTtsWarmupStatus() {
+  return warmupState;
+}
+
 async function getOfflineTts() {
   const modelDir = getKokoroModelDir();
   if (cachedTts?.modelDir === modelDir) {
     return cachedTts.tts;
   }
 
-  validateKokoroModelDir(modelDir);
+  if (cachedTtsPromise) {
+    const pending = await cachedTtsPromise;
+    if (pending.modelDir === modelDir) {
+      return pending.tts;
+    }
+  }
 
-  const OfflineTtsCtor = await getOfflineTtsConstructor();
-  const tts = new OfflineTtsCtor({
-    model: {
-      kokoro: {
-        model: toSherpaModelPath(path.join(modelDir, "model.onnx")),
-        voices: toSherpaModelPath(path.join(modelDir, "voices.bin")),
-        tokens: toSherpaModelPath(path.join(modelDir, "tokens.txt")),
-        dataDir: toSherpaModelPath(path.join(modelDir, "espeak-ng-data")),
-        lengthScale: getNumberEnv("CHAPTERCHASE_TTS_LENGTH_SCALE", 1),
+  const pendingTts = (async () => {
+    validateKokoroModelDir(modelDir);
+
+    const OfflineTtsCtor = await getOfflineTtsConstructor();
+    const tts = new OfflineTtsCtor({
+      model: {
+        kokoro: {
+          model: toSherpaModelPath(path.join(modelDir, "model.onnx")),
+          voices: toSherpaModelPath(path.join(modelDir, "voices.bin")),
+          tokens: toSherpaModelPath(path.join(modelDir, "tokens.txt")),
+          dataDir: toSherpaModelPath(path.join(modelDir, "espeak-ng-data")),
+          lengthScale: getNumberEnv("CHAPTERCHASE_TTS_LENGTH_SCALE", 1),
+        },
       },
-    },
-    numThreads: Math.max(1, Math.floor(getNumberEnv("CHAPTERCHASE_TTS_THREADS", 2))),
-    debug: process.env.CHAPTERCHASE_TTS_DEBUG === "true",
-    provider: "cpu",
-    maxNumSentences: Math.max(1, Math.floor(getNumberEnv("CHAPTERCHASE_TTS_MAX_SENTENCES", 1))),
-    silenceScale: getNumberEnv("CHAPTERCHASE_TTS_SILENCE_SCALE", 0.2),
-  });
+      numThreads: Math.max(1, Math.floor(getNumberEnv("CHAPTERCHASE_TTS_THREADS", 2))),
+      debug: process.env.CHAPTERCHASE_TTS_DEBUG === "true",
+      provider: "cpu",
+      maxNumSentences: Math.max(1, Math.floor(getNumberEnv("CHAPTERCHASE_TTS_MAX_SENTENCES", 1))),
+      silenceScale: getNumberEnv("CHAPTERCHASE_TTS_SILENCE_SCALE", 0.2),
+    });
 
-  cachedTts = { modelDir, tts };
-  return tts;
+    cachedTts = { modelDir, tts };
+    return cachedTts;
+  })();
+
+  cachedTtsPromise = pendingTts;
+  try {
+    return (await pendingTts).tts;
+  } catch (error) {
+    if (cachedTtsPromise === pendingTts) {
+      cachedTtsPromise = null;
+    }
+    throw error;
+  }
 }
 
 async function getOfflineTtsConstructor(): Promise<new (config: unknown) => OfflineTts> {
