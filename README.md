@@ -11,7 +11,7 @@ ChapterChase is a self-hosted ebook library web app. It indexes EPUB and PDF fil
 - PDF metadata and text extraction when the PDF contains readable text.
 - Metadata enrichment from Open Library and Google Books.
 - Per-user reading progress.
-- Browser reader at `/reader/[id]` with page-turn animation and Web Speech API TTS.
+- Browser reader at `/reader/[id]` with page-turn animation and local Kokoro TTS through sherpa-onnx.
 - Docker-first self-hosting with separate `/library` and `/data` mounts.
 
 ## Local Development
@@ -33,6 +33,36 @@ For local testing, set `CHAPTERCHASE_LIBRARY_DIR` or enter a full path such as:
 - Linux/macOS: `/mnt/books`
 
 ChapterChase does not move or rename your books. It stores only database records, extracted covers, and parsed text cache under `CHAPTERCHASE_DATA_DIR`.
+
+## Text To Speech
+
+ChapterChase uses the native Node sherpa-onnx package with `kokoro-en-v0_19`. The default voice is speaker ID `5` (`am_adam`), and each user can change the voice in **Settings > Preferences > Speech voice**.
+
+The model runs on the ChapterChase server. Windows PCs, Macs, iPhones, Android phones, and tablets only receive normal WAV audio from the server, so client devices do not need sherpa-onnx or the model files installed.
+
+Download the model files outside git and place the extracted folder at:
+
+```text
+data/tts/kokoro-en-v0_19
+```
+
+Or run:
+
+```bash
+npm run tts:download
+```
+
+For Docker, place it under the `/data` volume at:
+
+```text
+/data/tts/kokoro-en-v0_19
+```
+
+The folder must contain `model.onnx`, `voices.bin`, `tokens.txt`, and `espeak-ng-data`. You can override the location with:
+
+```env
+CHAPTERCHASE_TTS_MODEL_DIR="/absolute/path/to/kokoro-en-v0_19"
+```
 
 ## Docker
 
