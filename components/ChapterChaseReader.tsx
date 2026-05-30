@@ -462,7 +462,8 @@ export default function ChapterChaseReader({
 
       const tick = () => {
         const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
-        const progress = duration > 0 ? Math.max(0, Math.min(0.999, audio.currentTime / duration)) : 0;
+        const leadSeconds = duration > 0 ? Math.min(0.35, Math.max(0.0, duration * 0.08)) : 0;
+        const progress = duration > 0 ? Math.max(0, Math.min(0.999, (audio.currentTime + leadSeconds) / duration)) : 0;
         const wordIndex = Math.max(0, Math.min(wordCount - 1, Math.floor(progress * wordCount)));
         setSpeakingProgressWord({ pageIndex: targetPageIndex, wordIndex: wordOffset + wordIndex });
 
@@ -1077,6 +1078,18 @@ export default function ChapterChaseReader({
     setIsSpeechUnlocked(true);
     isReadingActiveRef.current = true;
     setIsReadingActive(true);
+
+    // Prime audio playback inside the user gesture call stack.
+    // Some browsers (notably iOS Safari / WKWebView) will reject playback if audio.play()
+    // happens only after async work/network completes.
+    const primer = new Audio();
+    primer.muted = true;
+    primer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+    void primer.play().catch(() => undefined).finally(() => {
+      primer.pause();
+      primer.removeAttribute("src");
+      primer.load();
+    });
 
     if (isOnCover) {
       if (pageFlipRef.current) {
@@ -1791,12 +1804,11 @@ function countTrackableWords(text: string) {
 }
 
 function splitTextIntoTtsChunks(text: string, maxChars = 520): TtsChunk[] {
-  const trimmed = text.trim();
-  if (!trimmed) {
+  if (!text.trim()) {
     return [];
   }
 
-  const tokens = trimmed.split(/(\s+)/);
+  const tokens = text.split(/(\s+)/);
   const chunks: TtsChunk[] = [];
 
   let current = "";
@@ -1832,7 +1844,7 @@ function splitTextIntoTtsChunks(text: string, maxChars = 520): TtsChunk[] {
   }
 
   pushCurrent();
-  return chunks.length ? chunks : [{ text: trimmed, wordOffset: 0, wordCount: countTrackableWords(trimmed) }];
+  return chunks.length ? chunks : [{ text: text.trim(), wordOffset: 0, wordCount: countTrackableWords(text) }];
 }
 
 function isTrackableWordToken(token: string) {
