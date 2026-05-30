@@ -75,6 +75,12 @@ type SpeakingWord = {
   wordIndex: number;
 };
 
+type TtsChunk = {
+  text: string;
+  wordOffset: number;
+  wordCount: number;
+};
+
 type ReaderWordTracker = {
   pageIndex: number;
   nextWordIndex: number;
@@ -181,6 +187,7 @@ export default function ChapterChaseReader({
   const [speechSupported, setSpeechSupported] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [speakingWord, setSpeakingWord] = useState<SpeakingWord | null>(null);
+  const [isSpeechGenerating, setIsSpeechGenerating] = useState(false);
   const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
   const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>({
     bionicReading: false,
@@ -218,7 +225,9 @@ export default function ChapterChaseReader({
   const speechAudioUrlRef = useRef<string | null>(null);
   const speechAbortControllerRef = useRef<AbortController | null>(null);
   const speechProgressFrameRef = useRef<number | null>(null);
-  const speechProgressMetaRef = useRef<{ pageIndex: number; wordCount: number } | null>(null);
+  const speechProgressMetaRef = useRef<{ pageIndex: number; wordCount: number; wordOffset: number } | null>(null);
+  const speechChunkMetaRef = useRef<{ pageIndex: number; chunks: TtsChunk[]; index: number } | null>(null);
+  const speechPrefetchRef = useRef<{ index: number; controller: AbortController; promise: Promise<Blob> } | null>(null);
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
   const autoAdvanceFallbackTimerRef = useRef<number | null>(null);
   const pendingAutoReadPageRef = useRef<number | null>(null);
@@ -430,6 +439,7 @@ export default function ChapterChaseReader({
     activeSpeakingWordElementRef.current?.classList.remove("reader-speaking-word");
     activeSpeakingWordElementRef.current = null;
     setSpeakingWord(null);
+    setIsSpeechGenerating(false);
   }, []);
 
   const setSpeakingProgressWord = useCallback((nextWord: SpeakingWord | null) => {
@@ -442,19 +452,19 @@ export default function ChapterChaseReader({
   }, []);
 
   const startSpeechProgressTracking = useCallback(
-    (audio: HTMLAudioElement, targetPageIndex: number, wordCount: number) => {
+    (audio: HTMLAudioElement, targetPageIndex: number, wordCount: number, wordOffset = 0) => {
       clearSpeechProgressTracking();
       if (wordCount <= 0) {
         return;
       }
 
-      speechProgressMetaRef.current = { pageIndex: targetPageIndex, wordCount };
+      speechProgressMetaRef.current = { pageIndex: targetPageIndex, wordCount, wordOffset };
 
       const tick = () => {
         const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
         const progress = duration > 0 ? Math.max(0, Math.min(0.999, audio.currentTime / duration)) : 0;
         const wordIndex = Math.max(0, Math.min(wordCount - 1, Math.floor(progress * wordCount)));
-        setSpeakingProgressWord({ pageIndex: targetPageIndex, wordIndex });
+        setSpeakingProgressWord({ pageIndex: targetPageIndex, wordIndex: wordOffset + wordIndex });
 
         if (!audio.paused && !audio.ended) {
           speechProgressFrameRef.current = window.requestAnimationFrame(tick);
@@ -485,6 +495,9 @@ export default function ChapterChaseReader({
     }
     speechAbortControllerRef.current?.abort();
     speechAbortControllerRef.current = null;
+    speechPrefetchRef.current?.controller.abort();
+    speechPrefetchRef.current = null;
+    speechChunkMetaRef.current = null;
     const audio = speechAudioRef.current;
     if (audio) {
       audio.pause();
@@ -721,45 +734,90 @@ export default function ChapterChaseReader({
     setIsReadingActive(true);
     setIsSpeechPaused(false);
     setSpeechError(null);
+    setIsSpeechGenerating(true);
 
     speechTimerRef.current = window.setTimeout(async () => {
       const controller = new AbortController();
       speechAbortControllerRef.current = controller;
 
       try {
-        const blob = await fetchTtsAudioBlob(text, ttsVoice, controller.signal);
-        if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) {
-          return;
-        }
-
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
         const shouldTrackWords = !safePages[clampedPageIndex]?.image;
-        const trackableWordCount = shouldTrackWords ? countTrackableWords(text) : 0;
-        speechAudioUrlRef.current = audioUrl;
-        speechAudioRef.current = audio;
-        speechAbortControllerRef.current = null;
+        const chunks = shouldTrackWords ? splitTextIntoTtsChunks(text) : [{ text, wordOffset: 0, wordCount: 0 }];
+        speechChunkMetaRef.current = { pageIndex: clampedPageIndex, chunks, index: 0 };
 
-        audio.onended = () => {
-          if (utteranceId !== utteranceIdRef.current) {
+        const playChunk = async (chunkIndex: number) => {
+          const meta = speechChunkMetaRef.current;
+          if (!meta || meta.pageIndex !== clampedPageIndex) return;
+          if (chunkIndex >= meta.chunks.length) {
+            // Page finished
+            if (utteranceId !== utteranceIdRef.current) return;
+            if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
+              advanceReadingAfterSpeech(clampedPageIndex);
+            } else {
+              finishSpeechReading();
+            }
             return;
           }
 
-          if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
-            advanceReadingAfterSpeech(clampedPageIndex);
+          meta.index = chunkIndex;
+          const chunk = meta.chunks[chunkIndex];
+
+          // Use prefetched audio if available for this chunk; otherwise fetch now.
+          setIsSpeechGenerating(true);
+          let blob: Blob;
+          const prefetch = speechPrefetchRef.current;
+          if (prefetch && prefetch.index === chunkIndex) {
+            blob = await prefetch.promise;
+            speechPrefetchRef.current = null;
           } else {
-            finishSpeechReading();
+            blob = await fetchTtsAudioBlob(chunk.text, ttsVoice, controller.signal);
           }
-        };
-        audio.onerror = () => {
-          if (utteranceId === utteranceIdRef.current) {
-            finishSpeechReading();
-            setSpeechError("Unable to play generated speech.");
+
+          if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
+
+          // Prefetch the next chunk while this one plays.
+          const nextIndex = chunkIndex + 1;
+          if (nextIndex < meta.chunks.length && !speechPrefetchRef.current) {
+            const nextController = new AbortController();
+            speechPrefetchRef.current = {
+              index: nextIndex,
+              controller: nextController,
+              promise: fetchTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal),
+            };
           }
+
+          if (speechAudioUrlRef.current) {
+            URL.revokeObjectURL(speechAudioUrlRef.current);
+            speechAudioUrlRef.current = null;
+          }
+
+          const audioUrl = URL.createObjectURL(blob);
+          let audio = speechAudioRef.current;
+          if (!audio) {
+            audio = new Audio();
+            speechAudioRef.current = audio;
+          }
+          speechAudioUrlRef.current = audioUrl;
+
+          audio.onended = () => {
+            if (utteranceId !== utteranceIdRef.current) return;
+            if (!isReadingActiveRef.current) return;
+            void playChunk(chunkIndex + 1);
+          };
+          audio.onerror = () => {
+            if (utteranceId === utteranceIdRef.current) {
+              finishSpeechReading();
+              setSpeechError("Unable to play generated speech.");
+            }
+          };
+
+          audio.src = audioUrl;
+          setIsSpeechGenerating(false);
+          await audio.play();
+          startSpeechProgressTracking(audio, clampedPageIndex, chunk.wordCount, chunk.wordOffset);
         };
 
-        await audio.play();
-        startSpeechProgressTracking(audio, clampedPageIndex, trackableWordCount);
+        await playChunk(0);
       } catch (error) {
         if (controller.signal.aborted || utteranceId !== utteranceIdRef.current) {
           return;
@@ -1043,7 +1101,10 @@ export default function ChapterChaseReader({
     }
 
     if (isReadingActive && !isSpeechPaused) {
-      speechAbortControllerRef.current?.abort();
+      // Only abort synthesis if we are still waiting for the next audio chunk.
+      if (isSpeechGenerating || !speechAudioRef.current) {
+        speechAbortControllerRef.current?.abort();
+      }
       speechAudioRef.current?.pause();
       isReadingActiveRef.current = false;
       setIsReadingActive(false);
@@ -1059,7 +1120,7 @@ export default function ChapterChaseReader({
       });
       const progressMeta = speechProgressMetaRef.current;
       if (progressMeta) {
-        startSpeechProgressTracking(pausedAudio, progressMeta.pageIndex, progressMeta.wordCount);
+        startSpeechProgressTracking(pausedAudio, progressMeta.pageIndex, progressMeta.wordCount, progressMeta.wordOffset);
       }
       isReadingActiveRef.current = true;
       setIsReadingActive(true);
@@ -1541,7 +1602,7 @@ export default function ChapterChaseReader({
 
         <div className="reader-toolbar-collapsed-actions" aria-hidden={!isToolbarCollapsed}>
           <span className="reader-toolbar-collapsed-status">
-            {isReadingActive && !isSpeechPaused ? "Reading" : isSpeechPaused ? "Paused" : "Ready"}
+            {isSpeechGenerating ? "Generating" : isReadingActive && !isSpeechPaused ? "Reading" : isSpeechPaused ? "Paused" : "Ready"}
           </span>
           <button
             className="reader-toolbar-mini-button"
@@ -1597,6 +1658,10 @@ export default function ChapterChaseReader({
         {speechError ? (
           <span className="reader-tts-status" role="status">
             {speechError}
+          </span>
+        ) : isSpeechGenerating ? (
+          <span className="reader-tts-status" role="status">
+            Generating audio...
           </span>
         ) : null}
 
@@ -1723,6 +1788,51 @@ function countWords(text: string) {
 
 function countTrackableWords(text: string) {
   return text.split(/(\s+)/).filter(isTrackableWordToken).length;
+}
+
+function splitTextIntoTtsChunks(text: string, maxChars = 520): TtsChunk[] {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const tokens = trimmed.split(/(\s+)/);
+  const chunks: TtsChunk[] = [];
+
+  let current = "";
+  let currentWordCount = 0;
+  let wordOffset = 0;
+
+  const pushCurrent = () => {
+    const chunkText = current.trim();
+    if (!chunkText) {
+      current = "";
+      currentWordCount = 0;
+      return;
+    }
+
+    chunks.push({ text: chunkText, wordOffset, wordCount: currentWordCount });
+    wordOffset += currentWordCount;
+    current = "";
+    currentWordCount = 0;
+  };
+
+  for (const token of tokens) {
+    if (!token) continue;
+
+    const candidate = current + token;
+    if (current && candidate.length > maxChars && current.trim()) {
+      pushCurrent();
+    }
+
+    current += token;
+    if (!/^\s+$/.test(token) && isTrackableWordToken(token)) {
+      currentWordCount += 1;
+    }
+  }
+
+  pushCurrent();
+  return chunks.length ? chunks : [{ text: trimmed, wordOffset: 0, wordCount: countTrackableWords(trimmed) }];
 }
 
 function isTrackableWordToken(token: string) {

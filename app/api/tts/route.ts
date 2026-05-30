@@ -1,5 +1,10 @@
 import { requireUser } from "@/lib/auth";
+import { resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { dataDir } from "@/lib/paths";
 import { getSherpaTtsConfigSummary, SherpaTtsSetupError, synthesizeWithSherpaKokoro } from "@/lib/sherpa-tts";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +19,21 @@ export async function POST(request: Request) {
   }
 
   try {
-    const wav = await synthesizeWithSherpaKokoro(text, body?.voiceId ?? body?.voice ?? user.ttsVoice);
+    const resolvedVoice = resolveKokoroVoiceId(body?.voiceId ?? body?.voice ?? user.ttsVoice);
+    const normalizedText = text.replace(/\s+/g, " ").trim().slice(0, 12000);
+    const cacheDir = path.join(dataDir, "tts-cache");
+    const cacheKey = crypto
+      .createHash("sha256")
+      .update(JSON.stringify({ v: 1, voice: resolvedVoice, text: normalizedText }))
+      .digest("hex");
+    const cachePath = path.join(cacheDir, `kokoro-${cacheKey}.wav`);
+
+    const cached = await fs.readFile(cachePath).catch(() => null);
+    const wav = cached ?? (await synthesizeWithSherpaKokoro(normalizedText, resolvedVoice));
+    if (!cached) {
+      await fs.mkdir(cacheDir, { recursive: true }).catch(() => undefined);
+      await fs.writeFile(cachePath, new Uint8Array(wav)).catch(() => undefined);
+    }
     return new Response(new Uint8Array(wav), {
       headers: {
         "Content-Type": "audio/wav",
