@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { downloadCoverImageWithDiagnostics } from "@/lib/covers";
 import { prisma } from "@/lib/db";
-import { fetchHardcoverMetadata } from "@/lib/hardcover";
+import { fetchGoogleBooksMetadata } from "@/lib/google-books";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +27,17 @@ export async function POST(request: Request) {
 
   let metadata;
   try {
-    metadata = await fetchHardcoverMetadata({
+    metadata = await fetchGoogleBooksMetadata({
       isbn: body.isbn ?? book?.isbn,
       title: body.title ?? book?.title,
       author: body.author ?? book?.author,
     });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Hardcover metadata fetch failed." }, { status: 502 });
+    return Response.json({ error: error instanceof Error ? error.message : "Google Books metadata fetch failed." }, { status: 502 });
   }
 
   if (!metadata) {
-    return Response.json({ error: "No Hardcover metadata match found." }, { status: 404 });
+    return Response.json({ error: "No Google Books metadata match found." }, { status: 404 });
   }
 
   if (!book) {
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       ...(coverPath ? { coverPath } : {}),
       metadataJson: JSON.stringify({
         ...parseMetadataJson(book.metadataJson),
-        hardcover: {
+        googleBooks: {
           title: metadata.title,
           description: metadata.description,
           releaseDate: metadata.publishedDate,

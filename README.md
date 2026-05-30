@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ChapterChase
 
 ChapterChase is a self-hosted ebook library web app. It indexes EPUB and PDF files from mounted library folders, preserves your existing NAS folder layout, and serves a browser-based reader with page-turn animation and text-to-speech auto-advance.
@@ -32,6 +33,42 @@ For local testing, set `CHAPTERCHASE_LIBRARY_DIR` or enter a full path such as:
 - NAS mounted on Windows: `Z:\Books`
 - Linux/macOS: `/mnt/books`
 
+=======
+# ChapterChase
+
+ChapterChase is a self-hosted ebook library web app. It indexes EPUB and PDF files from mounted library folders, preserves your existing NAS folder layout, and serves a browser-based reader with page-turn animation and text-to-speech auto-advance.
+
+## Current Features
+
+- Multi-user web login with first-run admin setup.
+- Admin-managed library folders.
+- Manual library scans that detect new, changed, missing, and failed files.
+- EPUB metadata, cover, and text extraction.
+- PDF metadata and text extraction when the PDF contains readable text.
+- Metadata enrichment from Open Library and Google Books.
+- Per-user reading progress.
+- Browser reader at `/reader/[id]` with page-turn animation and local Kokoro TTS through sherpa-onnx.
+- Docker-first self-hosting with separate `/library` and `/data` mounts.
+
+## Local Development
+
+```bash
+npm install
+copy .env.example .env
+npm run db:generate
+npm run db:push
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000), create the first admin account, then add a library folder from **Admin > Library Folders**.
+
+For local testing, set `CHAPTERCHASE_LIBRARY_DIR` or enter a full path such as:
+
+- Windows: `C:\Users\you\Books`
+- NAS mounted on Windows: `Z:\Books`
+- Linux/macOS: `/mnt/books`
+
+>>>>>>> 90323a799884a4738d6b370e67c763e809c1e02f
 ChapterChase does not move or rename your books. It stores only database records, extracted covers, and parsed text cache under `CHAPTERCHASE_DATA_DIR`.
 
 ## Text To Speech
@@ -47,6 +84,27 @@ data/tts/kokoro-en-v0_19
 ```
 
 Or run:
+<<<<<<< HEAD
+
+```bash
+npm run tts:download
+```
+
+For Docker, place it under the `/data` volume at:
+
+```text
+/data/tts/kokoro-en-v0_19
+```
+
+The folder must contain `model.onnx`, `voices.bin`, `tokens.txt`, and `espeak-ng-data`. You can override the location with:
+
+```env
+CHAPTERCHASE_TTS_MODEL_DIR="/absolute/path/to/kokoro-en-v0_19"
+```
+
+## Docker
+=======
+>>>>>>> 90323a799884a4738d6b370e67c763e809c1e02f
 
 ```bash
 npm run tts:download

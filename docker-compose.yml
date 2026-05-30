@@ -14,7 +14,7 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: "production"
       PORT: "3000"
-      HARDCOVER_API_KEY: "${HARDCOVER_API_KEY:-}"
+      GOOGLE_BOOKS_API_KEY: "${GOOGLE_BOOKS_API_KEY:-}"
     volumes:
       - /volume1/Docker/chapterchase/data:/data
       - /volume1/home/gr00t/Books:/library:ro

@@ -38,7 +38,7 @@ export function MetadataDownloaderCard() {
     <section className="library-automation-options metadata-downloader-card">
       <div>
         <h2>Automated Metadata Downloader</h2>
-        <p>Fetch missing descriptions and cover artwork from Hardcover for books that need enrichment.</p>
+        <p>Fetch missing descriptions and cover artwork from Google Books for books that need enrichment.</p>
       </div>
       <button type="button" className="kavita-save-button metadata-sync-button" onClick={syncMissingMetadata} disabled={isSyncing}>
         {isSyncing ? <RotateCw size={16} className="activity-indicator-spin" /> : null}
