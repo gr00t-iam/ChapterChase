@@ -154,18 +154,14 @@ function FormatFilterBar({
           All
           <span className="format-pill-count">{allCount}</span>
         </button>
-        {epubCount > 0 ? (
-          <button className={`format-pill epub ${activeFilter === "EPUB" ? "active" : ""}`} onClick={() => onChange("EPUB")}>
-            EPUB
-            <span className="format-pill-count">{epubCount}</span>
-          </button>
-        ) : null}
-        {pdfCount > 0 ? (
-          <button className={`format-pill pdf ${activeFilter === "PDF" ? "active" : ""}`} onClick={() => onChange("PDF")}>
-            PDF
-            <span className="format-pill-count">{pdfCount}</span>
-          </button>
-        ) : null}
+        <button className={`format-pill epub ${activeFilter === "EPUB" ? "active" : ""}`} onClick={() => onChange("EPUB")}>
+          EPUB
+          <span className="format-pill-count">{epubCount}</span>
+        </button>
+        <button className={`format-pill pdf ${activeFilter === "PDF" ? "active" : ""}`} onClick={() => onChange("PDF")}>
+          PDF
+          <span className="format-pill-count">{pdfCount}</span>
+        </button>
       </div>
     </div>
   );

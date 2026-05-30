@@ -83,24 +83,20 @@ function FlatLibraryGridInner() {
             All
             <span className="format-pill-count">{books.length}</span>
           </button>
-          {hasEpub && (
-            <button
-              className={`format-pill epub ${formatFilter === "EPUB" ? "active" : ""}`}
-              onClick={() => { setFormatFilter("EPUB"); setGrouped(false); }}
-            >
-              EPUB
-              <span className="format-pill-count">{epubBooks.length}</span>
-            </button>
-          )}
-          {hasPdf && (
-            <button
-              className={`format-pill pdf ${formatFilter === "PDF" ? "active" : ""}`}
-              onClick={() => { setFormatFilter("PDF"); setGrouped(false); }}
-            >
-              PDF
-              <span className="format-pill-count">{pdfBooks.length}</span>
-            </button>
-          )}
+          <button
+            className={`format-pill epub ${formatFilter === "EPUB" ? "active" : ""}`}
+            onClick={() => { setFormatFilter("EPUB"); setGrouped(false); }}
+          >
+            EPUB
+            <span className="format-pill-count">{epubBooks.length}</span>
+          </button>
+          <button
+            className={`format-pill pdf ${formatFilter === "PDF" ? "active" : ""}`}
+            onClick={() => { setFormatFilter("PDF"); setGrouped(false); }}
+          >
+            PDF
+            <span className="format-pill-count">{pdfBooks.length}</span>
+          </button>
         </div>
 
         {(hasEpub && hasPdf) && (

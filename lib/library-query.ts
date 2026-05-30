@@ -34,6 +34,7 @@ export async function getLibraryBooks({
       author: true,
       description: true,
       coverPath: true,
+      format: true,
       status: true,
       progress: {
         where: { userId },
