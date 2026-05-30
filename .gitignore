@@ -25,6 +25,10 @@
 /kokoro-en-v0_19.tar
 /kokoro-en-v0_19.tar.bz2
 
+# local secrets (do not commit)
+/secrets/*.env
+!/secrets/*.env.example
+
 # misc
 .DS_Store
 *.pem
