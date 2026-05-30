@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { defaultKokoroVoiceId, getKokoroVoiceName, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import { dataDir } from "@/lib/paths";
@@ -84,14 +86,50 @@ async function getOfflineTtsConstructor(): Promise<new (config: unknown) => Offl
         return mod.OfflineTts;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const nativeDetails = getSherpaNativeAddonFailureDetails();
+        const detailsSuffix = nativeDetails ? `\n\nNative addon details:\n${nativeDetails}` : "";
         throw new SherpaTtsSetupError(
-          `Unable to load sherpa-onnx-node. This is usually caused by missing platform optional dependencies inside the container (e.g. sherpa-onnx-linux-x64 or sherpa-onnx-linux-arm64). Error: ${message}`
+          `Unable to load sherpa-onnx-node. This is usually caused by missing platform optional dependencies inside the container (e.g. sherpa-onnx-linux-x64 or sherpa-onnx-linux-arm64) or missing Linux shared libraries.\n\nError: ${message}${detailsSuffix}`
         );
       }
     })();
   }
 
   return cachedOfflineTtsCtorPromise;
+}
+
+function getSherpaNativeAddonFailureDetails(): string {
+  // Try to surface the real `dlopen` failure (missing .so, GLIBC mismatch, etc.).
+  // sherpa-onnx-node's loader hides these and throws a generic "Could not find ..." message.
+  try {
+    const platform = os.platform() === "win32" ? "win" : os.platform();
+    const arch = os.arch();
+    const platformArch = `${platform}-${arch}`;
+
+    const require = createRequire(import.meta.url);
+    const possiblePaths = [
+      path.join(process.cwd(), "node_modules", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
+      // Next.js standalone output sometimes changes cwd; fall back to this file's directory.
+      path.join(path.dirname(require.resolve("sherpa-onnx-node")), "..", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
+    ];
+
+    for (const p of possiblePaths) {
+      if (!fs.existsSync(p)) continue;
+      try {
+        // Avoid dynamic native loads here; Turbopack will attempt to trace variable requires.
+        // The presence of the file is still useful, and the caller will include the original error message.
+        return `Native addon file exists: ${p}\nLD_LIBRARY_PATH=${process.env.LD_LIBRARY_PATH ?? ""}`;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return `Tried: ${p}\nFailure: ${msg}`;
+      }
+    }
+
+    return `No native addon file found for ${platformArch}. Checked:\n${possiblePaths.join("\n")}`;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return `Failed to compute native addon diagnostics: ${msg}`;
+  }
 }
 
 function getKokoroModelDir() {

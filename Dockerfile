@@ -1,4 +1,4 @@
-FROM node:20-bullseye-slim AS deps
+FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
@@ -6,7 +6,7 @@ COPY package*.json ./
 # even if the build environment sets npm omit flags.
 RUN npm ci --include=optional
 
-FROM node:20-bullseye-slim AS builder
+FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
@@ -15,7 +15,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-bullseye-slim AS runner
+FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -25,7 +25,10 @@ ENV CHAPTERCHASE_DATA_DIR=/data
 # Make them discoverable at runtime for the Node addon loader.
 ENV LD_LIBRARY_PATH=/app/node_modules/sherpa-onnx-linux-x64:/app/node_modules/sherpa-onnx-linux-arm64:$LD_LIBRARY_PATH
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/* \
+# sherpa-onnx runtime dependencies:
+# - libgomp1: OpenMP runtime used by onnxruntime builds
+# - libstdc++6/libgcc-s1/libatomic1: common C++ runtime deps for native addons
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl libgomp1 libstdc++6 libgcc-s1 libatomic1 && rm -rf /var/lib/apt/lists/* \
   && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs chapterchase
 COPY --from=builder /app/public ./public
