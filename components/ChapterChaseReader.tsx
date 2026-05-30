@@ -230,6 +230,7 @@ export default function ChapterChaseReader({
   const speechPrefetchRef = useRef<{ index: number; controller: AbortController; promise: Promise<Blob> } | null>(null);
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
   const pendingHighlightRef = useRef<Pick<HighlightPopover, "pageIndex" | "text" | "occurrence"> | null>(null);
+  const pendingHighlightCreatedAtRef = useRef(0);
   const autoAdvanceFallbackTimerRef = useRef<number | null>(null);
   const pendingAutoReadPageRef = useRef<number | null>(null);
   const speechTimerRef = useRef<number | null>(null);
@@ -561,7 +562,6 @@ export default function ChapterChaseReader({
 
       if (!selection || selection.rangeCount === 0 || selectedText.length < 2) {
         setHighlightPopover(null);
-        pendingHighlightRef.current = null;
         return;
       }
 
@@ -573,14 +573,12 @@ export default function ChapterChaseReader({
 
       if (!textElement || !Number.isFinite(selectedPageIndex)) {
         setHighlightPopover(null);
-        pendingHighlightRef.current = null;
         return;
       }
 
       const rect = range.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {
         setHighlightPopover(null);
-        pendingHighlightRef.current = null;
         return;
       }
 
@@ -590,6 +588,7 @@ export default function ChapterChaseReader({
         text: selectedText,
         occurrence,
       };
+      pendingHighlightCreatedAtRef.current = Date.now();
 
       setHighlightPopover({
         pageIndex: selectedPageIndex,
@@ -628,6 +627,7 @@ export default function ChapterChaseReader({
       const article = highlightElement.closest<HTMLElement>(".reader-book-page");
       const selectedPageIndex = Number(article?.dataset.pageIndex);
       const rect = highlightElement.getBoundingClientRect();
+      pendingHighlightRef.current = null;
       setHighlightPopover(null);
       setHighlightActionPopover({
         highlightId,
@@ -1196,6 +1196,37 @@ export default function ChapterChaseReader({
       return;
     }
 
+    const existingHighlight = readerHighlights.find(
+      (highlight) =>
+        highlight.pageIndex === pendingHighlight.pageIndex &&
+        highlight.occurrence === pendingHighlight.occurrence &&
+        highlight.text === pendingHighlight.text &&
+        highlight.color === color
+    );
+
+    if (existingHighlight) {
+      const nextHighlights = readerHighlights.filter((highlight) => highlight.id !== existingHighlight.id);
+      setReaderHighlights(nextHighlights);
+      saveBookHighlights(bookId, nextHighlights);
+      if (!isLocalBook) {
+        fetch("/api/annotations", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: existingHighlight.id,
+            bookId,
+            quote: existingHighlight.text,
+            color: existingHighlight.color,
+            locator: JSON.stringify({ pageIndex: existingHighlight.pageIndex, occurrence: existingHighlight.occurrence }),
+          }),
+        }).catch(() => undefined);
+      }
+      setHighlightPopover(null);
+      pendingHighlightRef.current = null;
+      window.getSelection()?.removeAllRanges();
+      return;
+    }
+
     const nextHighlight: ReaderHighlight = {
       id: crypto.randomUUID(),
       pageIndex: pendingHighlight.pageIndex,
@@ -1226,7 +1257,36 @@ export default function ChapterChaseReader({
     setHighlightPopover(null);
     pendingHighlightRef.current = null;
     window.getSelection()?.removeAllRanges();
-  }, [bookId, highlightColor, highlightPopover, isLocalBook]);
+  }, [bookId, highlightColor, highlightPopover, isLocalBook, readerHighlights]);
+
+  const handleHighlightToggleClick = useCallback(() => {
+    if (pendingHighlightRef.current) {
+      saveHighlight(highlightColor);
+      setHighlighterMode(true);
+      return;
+    }
+    setHighlighterMode((current) => !current);
+  }, [highlightColor, saveHighlight]);
+
+  const commitPendingHighlightFromPageClick = useCallback(
+    (target: EventTarget | null) => {
+      if (!pendingHighlightRef.current) {
+        return;
+      }
+
+      const element = target instanceof HTMLElement ? target : null;
+      if (element?.closest(".highlight-popover, .reader-topbar, .reader-tts-panel, .reading-ruler")) {
+        return;
+      }
+
+      if (Date.now() - pendingHighlightCreatedAtRef.current < 180) {
+        return;
+      }
+
+      saveHighlight(highlightColor);
+    },
+    [highlightColor, saveHighlight]
+  );
 
   const removeHighlight = useCallback((highlightId: string) => {
     const target = readerHighlights.find((highlight) => highlight.id === highlightId);
@@ -1249,6 +1309,7 @@ export default function ChapterChaseReader({
     }
 
     setHighlightActionPopover(null);
+    pendingHighlightRef.current = null;
   }, [bookId, isLocalBook, readerHighlights]);
 
   const clearHighlightsOnCurrentPage = useCallback(() => {
@@ -1444,14 +1505,19 @@ export default function ChapterChaseReader({
         <button
           className={`reader-highlight-toggle ${highlighterMode ? "active" : ""}`}
           aria-pressed={highlighterMode}
-          onClick={() => setHighlighterMode((current) => !current)}
+          onClick={handleHighlightToggleClick}
         >
           <Highlighter size={16} />
           Highlight
         </button>
       </header>
 
-      <section className="reader-stage" ref={readerStageRef}>
+      <section
+        className="reader-stage"
+        ref={readerStageRef}
+        onMouseDown={(event) => commitPendingHighlightFromPageClick(event.target)}
+        onTouchStart={(event) => commitPendingHighlightFromPageClick(event.target)}
+      >
         {readingRulerEnabled ? (
           <div
             ref={rulerRef}
