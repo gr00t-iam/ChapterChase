@@ -229,6 +229,7 @@ export default function ChapterChaseReader({
   const speechChunkMetaRef = useRef<{ pageIndex: number; chunks: TtsChunk[]; index: number } | null>(null);
   const speechPrefetchRef = useRef<{ index: number; controller: AbortController; promise: Promise<Blob> } | null>(null);
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
+  const pendingHighlightRef = useRef<Pick<HighlightPopover, "pageIndex" | "text" | "occurrence"> | null>(null);
   const autoAdvanceFallbackTimerRef = useRef<number | null>(null);
   const pendingAutoReadPageRef = useRef<number | null>(null);
   const speechTimerRef = useRef<number | null>(null);
@@ -560,6 +561,7 @@ export default function ChapterChaseReader({
 
       if (!selection || selection.rangeCount === 0 || selectedText.length < 2) {
         setHighlightPopover(null);
+        pendingHighlightRef.current = null;
         return;
       }
 
@@ -571,19 +573,28 @@ export default function ChapterChaseReader({
 
       if (!textElement || !Number.isFinite(selectedPageIndex)) {
         setHighlightPopover(null);
+        pendingHighlightRef.current = null;
         return;
       }
 
       const rect = range.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) {
         setHighlightPopover(null);
+        pendingHighlightRef.current = null;
         return;
       }
+
+      const occurrence = getSelectionOccurrence(textElement, range, selectedText);
+      pendingHighlightRef.current = {
+        pageIndex: selectedPageIndex,
+        text: selectedText,
+        occurrence,
+      };
 
       setHighlightPopover({
         pageIndex: selectedPageIndex,
         text: selectedText,
-        occurrence: getSelectionOccurrence(textElement, range, selectedText),
+        occurrence,
         x: Math.max(8, Math.min(window.innerWidth - 168, rect.left + rect.width / 2 - 84)),
         y: Math.max(58, rect.top - 48),
       });
@@ -1180,15 +1191,16 @@ export default function ChapterChaseReader({
   }, [bookId, quoteText, readerTheme, title]);
 
   const saveHighlight = useCallback((color = highlightColor) => {
-    if (!highlightPopover) {
+    const pendingHighlight = pendingHighlightRef.current ?? highlightPopover;
+    if (!pendingHighlight) {
       return;
     }
 
     const nextHighlight: ReaderHighlight = {
       id: crypto.randomUUID(),
-      pageIndex: highlightPopover.pageIndex,
-      text: highlightPopover.text,
-      occurrence: highlightPopover.occurrence,
+      pageIndex: pendingHighlight.pageIndex,
+      text: pendingHighlight.text,
+      occurrence: pendingHighlight.occurrence,
       color,
       createdAt: new Date().toISOString(),
     };
@@ -1212,6 +1224,7 @@ export default function ChapterChaseReader({
       }).catch(() => undefined);
     }
     setHighlightPopover(null);
+    pendingHighlightRef.current = null;
     window.getSelection()?.removeAllRanges();
   }, [bookId, highlightColor, highlightPopover, isLocalBook]);
 
@@ -1253,6 +1266,7 @@ export default function ChapterChaseReader({
     saveBookHighlights(bookId, nextHighlights);
     setHighlightPopover(null);
     setHighlightActionPopover(null);
+    pendingHighlightRef.current = null;
 
     if (!isLocalBook) {
       fetch("/api/annotations", {
@@ -1275,6 +1289,7 @@ export default function ChapterChaseReader({
       tab: "local",
     });
     setHighlightPopover(null);
+    pendingHighlightRef.current = null;
     window.getSelection()?.removeAllRanges();
   }, [highlightPopover, safePages]);
 
@@ -1491,6 +1506,8 @@ export default function ChapterChaseReader({
                   aria-label={`${color.label} highlight`}
                   title={color.label}
                   style={{ backgroundColor: color.value }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onTouchStart={(event) => event.preventDefault()}
                   onClick={() => {
                     setHighlightColor(color.value);
                     saveHighlight(color.value);
@@ -1899,8 +1916,15 @@ function ScrollReaderPages({
                 <p>Rendering page...</p>
               </div>
             ) : page.image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={page.image} alt={`Page ${index + 1}`} className="reader-pdf-page-image" loading="lazy" decoding="async" />
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={page.image} alt={`Page ${index + 1}`} className="reader-pdf-page-image" loading="lazy" decoding="async" />
+                {page.text.trim() ? (
+                  <p className="reader-page-text reader-pdf-text-layer whitespace-pre-wrap">
+                    {renderHighlightedText(page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading, index)}
+                  </p>
+                ) : null}
+              </>
             ) : (
               <>
                 {page.title ? <p className="reader-page-title mb-4 text-xs uppercase tracking-[0.22em]">{page.title}</p> : null}
@@ -2533,6 +2557,13 @@ function createContentPageElement(page: FlipPage, index: number, highlights: Rea
     image.loading = "lazy";
     image.decoding = "async";
     content.appendChild(image);
+
+    if (page.text.trim()) {
+      const text = document.createElement("p");
+      text.className = "reader-page-text reader-pdf-text-layer whitespace-pre-wrap text-sm leading-6";
+      appendHighlightedText(text, page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading, index);
+      content.appendChild(text);
+    }
   } else {
     if (page.title) {
       const pageTitle = document.createElement("p");

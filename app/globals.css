@@ -2359,6 +2359,20 @@ select {
   object-position: center;
 }
 
+.reader-pdf-text-layer {
+  margin-top: 0.85rem;
+  max-height: 11rem;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--reader-accent) 26%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--reader-page-bg) 86%, transparent);
+  padding: 0.75rem;
+  color: var(--reader-text, var(--reader-page-text));
+  font-size: max(0.88rem, calc(var(--reader-custom-font-size, 18px) * 0.78));
+  line-height: 1.55;
+  user-select: text;
+}
+
 .reader-shell[data-reader-theme="scroll"] .reader-pdf-book-page {
   font-family: var(--reader-font, var(--reader-page-font));
   color: var(--reader-text, var(--reader-page-text));
@@ -2366,6 +2380,7 @@ select {
 
 .reader-shell[data-reader-theme="scroll"] .reader-pdf-page-content {
   display: flex;
+  flex-direction: column;
   max-height: 85%;
   align-items: center;
   justify-content: center;
