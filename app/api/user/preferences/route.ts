@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 
 const themes = new Set(["paper", "night", "scroll", "eink", "reseda", "deepsea"]);
 const layouts = new Set(["flat", "shelf"]);
@@ -11,6 +12,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     name?: string;
     readerTheme?: string;
+    ttsVoice?: string;
     uiLayout?: string;
     defaultReadingMode?: string;
     blurUnreadSummaries?: boolean;
@@ -26,6 +28,7 @@ export async function PATCH(request: Request) {
   const data: {
     name?: string;
     readerTheme?: string;
+    ttsVoice?: string;
     uiLayout?: string;
     defaultReadingMode?: string;
     blurUnreadSummaries?: boolean;
@@ -42,6 +45,9 @@ export async function PATCH(request: Request) {
   }
   if (body.readerTheme && themes.has(body.readerTheme)) {
     data.readerTheme = body.readerTheme;
+  }
+  if (typeof body.ttsVoice === "string") {
+    data.ttsVoice = String(resolveKokoroVoiceId(body.ttsVoice));
   }
   if (body.uiLayout && layouts.has(body.uiLayout)) {
     data.uiLayout = body.uiLayout;
@@ -83,6 +89,7 @@ export async function PATCH(request: Request) {
       id: true,
       name: true,
       readerTheme: true,
+      ttsVoice: true,
       uiLayout: true,
       defaultReadingMode: true,
       blurUnreadSummaries: true,

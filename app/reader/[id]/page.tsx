@@ -23,6 +23,7 @@ export default async function ReaderPage({
       <LocalBookReader
         bookId={id}
         initialTheme={user.readerTheme}
+        initialTtsVoice={user.ttsVoice}
         initialPageOverride={requestedPage}
       />
     );
@@ -49,6 +50,7 @@ export default async function ReaderPage({
       pages={cache.pages}
       initialPage={requestedPage ?? book.progress[0]?.pageIndex ?? 0}
       initialTheme={user.readerTheme}
+      initialTtsVoice={user.ttsVoice}
       metadataJson={book.metadataJson}
     />
   );

@@ -3,6 +3,7 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { defaultKokoroVoiceId, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 
 type ReadingProfile = {
   id: string;
@@ -16,6 +17,7 @@ type SettingsUser = {
   name: string;
   email: string;
   readerTheme: string;
+  ttsVoice: string;
   uiLayout: string;
   defaultReadingMode: string;
   blurUnreadSummaries: boolean;
@@ -48,6 +50,7 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   const [status, setStatus] = useState<string | null>(null);
   const [form, setForm] = useState(() => ({
     ...user,
+    ttsVoice: String(resolveKokoroVoiceId(user.ttsVoice)),
     annotationHighlightColors: parseColors(user.annotationHighlightColors),
     readingProfiles: parseProfiles(user.readingProfiles),
   }));
@@ -120,10 +123,11 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   useEffect(() => {
     saveLocalUserSettings({
       activeReadingProfile: form.readerTheme,
+      ttsVoice: form.ttsVoice,
       bionicReading,
       readingProfiles: form.readingProfiles,
     });
-  }, [bionicReading, form.readerTheme, form.readingProfiles]);
+  }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice]);
 
   async function save() {
     setStatus(null);
@@ -197,6 +201,16 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
                   <option value="auto">Auto</option>
                   <option value="portrait">Portrait</option>
                   <option value="landscape">Landscape</option>
+                </select>
+              </label>
+              <label className="settings-field">
+                <span>Speech voice</span>
+                <select value={form.ttsVoice} onChange={(event) => update("ttsVoice", String(resolveKokoroVoiceId(event.target.value)))}>
+                  {kokoroVoices.map((voice) => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <Toggle label="Blur Unread Summaries" checked={form.blurUnreadSummaries} onChange={(value) => update("blurUnreadSummaries", value)} />
@@ -370,18 +384,18 @@ function isFactoryProfile(profile: ReadingProfile) {
 
 function loadLocalUserSettings() {
   if (typeof window === "undefined") {
-    return { bionicReading: false };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
   }
 
   try {
-    const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as { bionicReading?: unknown };
-    return { bionicReading: parsed.bionicReading === true };
+    const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as { bionicReading?: unknown; ttsVoice?: unknown };
+    return { bionicReading: parsed.bionicReading === true, ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)) };
   } catch {
-    return { bionicReading: false };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
   }
 }
 
-function saveLocalUserSettings(settings: { activeReadingProfile: string; bionicReading: boolean; readingProfiles: ReadingProfile[] }) {
+function saveLocalUserSettings(settings: { activeReadingProfile: string; ttsVoice: string; bionicReading: boolean; readingProfiles: ReadingProfile[] }) {
   if (typeof window === "undefined") {
     return;
   }

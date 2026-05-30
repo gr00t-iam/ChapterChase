@@ -19,6 +19,7 @@ model User {
   resetPasswordToken String?     @unique
   resetPasswordExpires DateTime?
   readerTheme  String            @default("paper")
+  ttsVoice     String            @default("5")
   uiLayout     String            @default("flat")
   defaultReadingMode String      @default("auto")
   blurUnreadSummaries Boolean     @default(false)

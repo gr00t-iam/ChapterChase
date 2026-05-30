@@ -26,6 +26,7 @@ export default async function SettingsPage() {
             name: user.name,
             email: user.email,
             readerTheme: user.readerTheme,
+            ttsVoice: user.ttsVoice,
             uiLayout: user.uiLayout,
             defaultReadingMode: user.defaultReadingMode,
             blurUnreadSummaries: user.blurUnreadSummaries,

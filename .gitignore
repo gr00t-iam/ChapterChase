@@ -21,6 +21,9 @@
 /build
 /data
 /library
+/kokoro-en-v0_19.tar/
+/kokoro-en-v0_19.tar
+/kokoro-en-v0_19.tar.bz2
 
 # misc
 .DS_Store

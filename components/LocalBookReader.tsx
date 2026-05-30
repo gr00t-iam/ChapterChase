@@ -8,6 +8,7 @@ import { paginateText, type ReaderPage } from "@/lib/pagination";
 type LocalBookReaderProps = {
   bookId: string;
   initialTheme: string;
+  initialTtsVoice: string;
   initialPageOverride?: number | null;
 };
 
@@ -24,7 +25,7 @@ type LocalReaderState =
       fileBlob: Blob;
     };
 
-export function LocalBookReader({ bookId, initialTheme, initialPageOverride }: LocalBookReaderProps) {
+export function LocalBookReader({ bookId, initialTheme, initialTtsVoice, initialPageOverride }: LocalBookReaderProps) {
   const [state, setState] = useState<LocalReaderState>({ status: "loading" });
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export function LocalBookReader({ bookId, initialTheme, initialPageOverride }: L
       pages={state.pages}
       initialPage={state.initialPage}
       initialTheme={initialTheme}
+      initialTtsVoice={initialTtsVoice}
       localFileBlob={state.fileBlob}
     />
   );

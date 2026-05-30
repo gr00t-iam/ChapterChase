@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, TouchEvent as ReactTouchEvent } from "react";
-import { ChevronLeft, ChevronRight, Highlighter, Pause, Pin, Play, Search, Trash2, Type, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Highlighter, Pause, Pin, Play, Search, Trash2, Type, X } from "lucide-react";
 import { PageFlip } from "page-flip";
 import { ReadingSprintTimer } from "@/components/ReadingSprintTimer";
 import type { ReaderPage } from "@/lib/book-cache";
 import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
+import { defaultKokoroVoiceId, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 type ReaderProps = {
@@ -19,6 +20,7 @@ type ReaderProps = {
   pages: ReaderPage[];
   initialPage: number;
   initialTheme?: string;
+  initialTtsVoice?: string;
   metadataJson?: string | null;
   localFileBlob?: Blob;
 };
@@ -68,10 +70,21 @@ type XRayProfile = {
   notablePages: number[];
 };
 
+type SpeakingWord = {
+  pageIndex: number;
+  wordIndex: number;
+};
+
+type ReaderWordTracker = {
+  pageIndex: number;
+  nextWordIndex: number;
+};
+
 const readerThemes = new Set(["paper", "night", "scroll", "eink", "reseda", "deepsea"]);
 const defaultHighlightColor = "#facc15";
 const readerTextSettingsStorageKey = "chapterchase:reader:textSettings";
 const readerFixedPageModeStorageKey = "chapterchase:reader:fixedPageMode";
+const readerToolbarCollapsedStorageKey = "readerToolbarCollapsed";
 const highlightPalette = [
   { label: "Yellow", value: "#facc15" },
   { label: "Green", value: "#86efac" },
@@ -134,6 +147,7 @@ const defaultReaderTextSettings: ReaderTextSettings = {
 
 type LocalReaderSettings = {
   activeReadingProfile?: string;
+  ttsVoice?: string;
   bionicReading: boolean;
 };
 
@@ -145,6 +159,7 @@ export default function ChapterChaseReader({
   pages,
   initialPage,
   initialTheme = "paper",
+  initialTtsVoice = String(defaultKokoroVoiceId),
   localFileBlob,
 }: ReaderProps) {
   const isPdf = format === "PDF";
@@ -163,17 +178,21 @@ export default function ChapterChaseReader({
   const [isReadingActive, setIsReadingActive] = useState(false);
   const [isSpeechPaused, setIsSpeechPaused] = useState(false);
   const [isSpeechUnlocked, setIsSpeechUnlocked] = useState(false);
-  const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>(() => loadLocalReaderSettings());
-  const [readerTheme, setReaderTheme] = useState(() =>
-    localReaderSettings.activeReadingProfile && readerThemes.has(localReaderSettings.activeReadingProfile)
-      ? localReaderSettings.activeReadingProfile
-      : normalizedInitialTheme
-  );
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [speakingWord, setSpeakingWord] = useState<SpeakingWord | null>(null);
+  const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
+  const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>({
+    bionicReading: false,
+    ttsVoice: String(resolveKokoroVoiceId(initialTtsVoice)),
+  });
+  const [ttsVoice, setTtsVoice] = useState(() => String(resolveKokoroVoiceId(initialTtsVoice)));
+  const [readerTheme, setReaderTheme] = useState(normalizedInitialTheme);
   const [readingRulerEnabled, setReadingRulerEnabled] = useState(false);
   const [isTimerVisible, setIsTimerVisible] = useState(false);
   const [isTextSettingsOpen, setIsTextSettingsOpen] = useState(false);
-  const [readerTextSettings, setReaderTextSettings] = useState<ReaderTextSettings>(() => loadReaderTextSettings());
-  const [fixedPageMode, setFixedPageMode] = useState(() => loadFixedPageMode());
+  const [readerTextSettings, setReaderTextSettings] = useState<ReaderTextSettings>(defaultReaderTextSettings);
+  const [fixedPageMode, setFixedPageMode] = useState(true);
   const [highlighterMode, setHighlighterMode] = useState(false);
   const [readingRulerPinned, setReadingRulerPinned] = useState(false);
   const [rulerPosition, setRulerPosition] = useState<{ x: number; y: number } | null>(null);
@@ -181,7 +200,7 @@ export default function ChapterChaseReader({
   const [highlightColor, setHighlightColor] = useState(defaultHighlightColor);
   const [highlightPopover, setHighlightPopover] = useState<HighlightPopover | null>(null);
   const [highlightActionPopover, setHighlightActionPopover] = useState<HighlightActionPopover | null>(null);
-  const [readerHighlights, setReaderHighlights] = useState<ReaderHighlight[]>(() => loadBookHighlights(bookId));
+  const [readerHighlights, setReaderHighlights] = useState<ReaderHighlight[]>([]);
   const [xrayPanel, setXrayPanel] = useState<{ term: string; matches: XRayMatch[]; profile: XRayProfile; tab: "local" | "community" } | null>(null);
   const [sprintState, setSprintState] = useState({ active: false, progress: 0, remainingSeconds: 0 });
   const [quoteImageUrl, setQuoteImageUrl] = useState<string | null>(null);
@@ -195,6 +214,14 @@ export default function ChapterChaseReader({
   const pageFlipInitTimerRef = useRef<number | null>(null);
   const cleanupResizeRef = useRef<(() => void) | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const speechAudioRef = useRef<HTMLAudioElement | null>(null);
+  const speechAudioUrlRef = useRef<string | null>(null);
+  const speechAbortControllerRef = useRef<AbortController | null>(null);
+  const speechProgressFrameRef = useRef<number | null>(null);
+  const speechProgressMetaRef = useRef<{ pageIndex: number; wordCount: number } | null>(null);
+  const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
+  const autoAdvanceFallbackTimerRef = useRef<number | null>(null);
+  const pendingAutoReadPageRef = useRef<number | null>(null);
   const speechTimerRef = useRef<number | null>(null);
   const utteranceIdRef = useRef(0);
   const isReadingActiveRef = useRef(false);
@@ -204,8 +231,6 @@ export default function ChapterChaseReader({
   const latestPage = useRef(pageIndex);
   const pageEnteredAtRef = useRef(0);
   const lastAnalyticsPageRef = useRef(pageIndex);
-  const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
-  const currentPage = safePages[pageIndex] ?? safePages[0];
   const bionicReading = localReaderSettings.bionicReading;
   const readerShellStyle = useMemo(
     () =>
@@ -235,6 +260,51 @@ export default function ChapterChaseReader({
   useEffect(() => {
     latestPage.current = pageIndex;
   }, [pageIndex]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSpeechSupported(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsToolbarCollapsed(loadToolbarCollapsed()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextSettings = loadLocalReaderSettings();
+      setLocalReaderSettings(nextSettings);
+      setTtsVoice(String(resolveKokoroVoiceId(nextSettings.ttsVoice ?? initialTtsVoice)));
+      setReaderTheme(
+        nextSettings.activeReadingProfile && readerThemes.has(nextSettings.activeReadingProfile)
+          ? nextSettings.activeReadingProfile
+          : normalizedInitialTheme
+      );
+      setReaderTextSettings(loadReaderTextSettings());
+      setFixedPageMode(loadFixedPageMode());
+      setReaderHighlights(loadBookHighlights(bookId));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [bookId, initialTtsVoice, normalizedInitialTheme]);
+
+  useEffect(() => {
+    const activeElement = activeSpeakingWordElementRef.current;
+    activeElement?.classList.remove("reader-speaking-word");
+    activeSpeakingWordElementRef.current = null;
+
+    if (!speakingWord) {
+      return;
+    }
+
+    const nextElement = readerStageRef.current?.querySelector<HTMLElement>(
+      `.reader-word[data-page-index="${speakingWord.pageIndex}"][data-word-index="${speakingWord.wordIndex}"]`
+    );
+    if (nextElement) {
+      nextElement.classList.add("reader-speaking-word");
+      activeSpeakingWordElementRef.current = nextElement;
+    }
+  }, [speakingWord]);
 
   useEffect(() => {
     if (isLocalBook) {
@@ -328,6 +398,9 @@ export default function ChapterChaseReader({
       if (nextSettings.activeReadingProfile && readerThemes.has(nextSettings.activeReadingProfile)) {
         setReaderTheme(nextSettings.activeReadingProfile);
       }
+      if (nextSettings.ttsVoice) {
+        setTtsVoice(String(resolveKokoroVoiceId(nextSettings.ttsVoice)));
+      }
     };
 
     window.addEventListener("storage", refreshUserSettings);
@@ -348,12 +421,89 @@ export default function ChapterChaseReader({
     }).catch(() => undefined);
   }, []);
 
+  const clearSpeechProgressTracking = useCallback(() => {
+    if (speechProgressFrameRef.current) {
+      window.cancelAnimationFrame(speechProgressFrameRef.current);
+      speechProgressFrameRef.current = null;
+    }
+    speechProgressMetaRef.current = null;
+    activeSpeakingWordElementRef.current?.classList.remove("reader-speaking-word");
+    activeSpeakingWordElementRef.current = null;
+    setSpeakingWord(null);
+  }, []);
+
+  const setSpeakingProgressWord = useCallback((nextWord: SpeakingWord | null) => {
+    setSpeakingWord((current) => {
+      if (current?.pageIndex === nextWord?.pageIndex && current?.wordIndex === nextWord?.wordIndex) {
+        return current;
+      }
+      return nextWord;
+    });
+  }, []);
+
+  const startSpeechProgressTracking = useCallback(
+    (audio: HTMLAudioElement, targetPageIndex: number, wordCount: number) => {
+      clearSpeechProgressTracking();
+      if (wordCount <= 0) {
+        return;
+      }
+
+      speechProgressMetaRef.current = { pageIndex: targetPageIndex, wordCount };
+
+      const tick = () => {
+        const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+        const progress = duration > 0 ? Math.max(0, Math.min(0.999, audio.currentTime / duration)) : 0;
+        const wordIndex = Math.max(0, Math.min(wordCount - 1, Math.floor(progress * wordCount)));
+        setSpeakingProgressWord({ pageIndex: targetPageIndex, wordIndex });
+
+        if (!audio.paused && !audio.ended) {
+          speechProgressFrameRef.current = window.requestAnimationFrame(tick);
+        } else {
+          speechProgressFrameRef.current = null;
+        }
+      };
+
+      tick();
+    },
+    [clearSpeechProgressTracking, setSpeakingProgressWord]
+  );
+
+  const clearAutoAdvanceFallback = useCallback(() => {
+    if (autoAdvanceFallbackTimerRef.current) {
+      window.clearTimeout(autoAdvanceFallbackTimerRef.current);
+      autoAdvanceFallbackTimerRef.current = null;
+    }
+    pendingAutoReadPageRef.current = null;
+  }, []);
+
+  const cleanupCurrentSpeechAudio = useCallback(() => {
+    clearAutoAdvanceFallback();
+    clearSpeechProgressTracking();
+    if (speechTimerRef.current) {
+      window.clearTimeout(speechTimerRef.current);
+      speechTimerRef.current = null;
+    }
+    speechAbortControllerRef.current?.abort();
+    speechAbortControllerRef.current = null;
+    const audio = speechAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      speechAudioRef.current = null;
+    }
+    if (speechAudioUrlRef.current) {
+      URL.revokeObjectURL(speechAudioUrlRef.current);
+      speechAudioUrlRef.current = null;
+    }
+  }, [clearAutoAdvanceFallback, clearSpeechProgressTracking]);
+
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       pageFlipRef.current?.update();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [readerTheme, fixedPageMode]);
+  }, [readerTheme, fixedPageMode, isToolbarCollapsed]);
 
   useEffect(() => {
     const now = Date.now();
@@ -474,7 +624,7 @@ export default function ChapterChaseReader({
         return;
       }
       utteranceIdRef.current += 1;
-      window.speechSynthesis?.cancel();
+      cleanupCurrentSpeechAudio();
       if (pageFlipRef.current) {
         if (Math.abs(clamped - flipIndex) > 1) {
           pageFlipRef.current.turnToPage(clamped);
@@ -487,7 +637,7 @@ export default function ChapterChaseReader({
         setFlipIndex(clamped);
       }
     },
-    [flipIndex, pageCount]
+    [cleanupCurrentSpeechAudio, flipIndex, pageCount]
   );
 
   const extractPdfText = useCallback(
@@ -503,6 +653,51 @@ export default function ChapterChaseReader({
     [pdfDocument]
   );
 
+  const finishSpeechReading = useCallback(() => {
+    clearAutoAdvanceFallback();
+    clearSpeechProgressTracking();
+    isReadingActiveRef.current = false;
+    setIsReadingActive(false);
+    setIsSpeechPaused(false);
+  }, [clearAutoAdvanceFallback, clearSpeechProgressTracking]);
+
+  const advanceReadingAfterSpeech = useCallback(
+    (currentPageIndex: number) => {
+      const nextPageIndex = currentPageIndex + 1;
+      if (nextPageIndex >= pageCount) {
+        finishSpeechReading();
+        return;
+      }
+
+      pendingAutoReadPageRef.current = nextPageIndex;
+
+      if (fixedPageMode && pageFlipRef.current) {
+        pageFlipRef.current.flipNext("top");
+        autoAdvanceFallbackTimerRef.current = window.setTimeout(() => {
+          autoAdvanceFallbackTimerRef.current = null;
+          if (!isReadingActiveRef.current || pendingAutoReadPageRef.current !== nextPageIndex) {
+            return;
+          }
+          pendingAutoReadPageRef.current = null;
+          setFlipIndex(nextPageIndex + 1);
+          void readCurrentPageRef.current(nextPageIndex);
+        }, 1250);
+        return;
+      }
+
+      clearAutoAdvanceFallback();
+      setFlipIndex(nextPageIndex + 1);
+      window.setTimeout(() => {
+        if (!isReadingActiveRef.current) {
+          return;
+        }
+        scrollPageRefs.current[nextPageIndex]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        void readCurrentPageRef.current(nextPageIndex);
+      }, 160);
+    },
+    [clearAutoAdvanceFallback, finishSpeechReading, fixedPageMode, pageCount]
+  );
+
   const readCurrentPage = useCallback(async (targetPageIndex = latestPage.current) => {
     if (!speechSupported) {
       return;
@@ -511,50 +706,87 @@ export default function ChapterChaseReader({
     const clampedPageIndex = Math.max(0, Math.min(pageCount - 1, targetPageIndex));
     const text = isPdf ? await extractPdfText(clampedPageIndex) : (safePages[clampedPageIndex]?.text ?? "");
     if (!text.trim()) {
-      isReadingActiveRef.current = false;
-      setIsReadingActive(false);
-      setIsSpeechPaused(false);
+      finishSpeechReading();
       return;
     }
 
-    if (speechTimerRef.current) {
-      window.clearTimeout(speechTimerRef.current);
-      speechTimerRef.current = null;
+    if (pendingAutoReadPageRef.current === clampedPageIndex) {
+      clearAutoAdvanceFallback();
     }
 
     utteranceIdRef.current += 1;
     const utteranceId = utteranceIdRef.current;
-    window.speechSynthesis.cancel();
+    cleanupCurrentSpeechAudio();
     isReadingActiveRef.current = true;
     setIsReadingActive(true);
     setIsSpeechPaused(false);
+    setSpeechError(null);
 
-    speechTimerRef.current = window.setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => {
-        if (utteranceId !== utteranceIdRef.current) {
+    speechTimerRef.current = window.setTimeout(async () => {
+      const controller = new AbortController();
+      speechAbortControllerRef.current = controller;
+
+      try {
+        const blob = await fetchTtsAudioBlob(text, ttsVoice, controller.signal);
+        if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) {
           return;
         }
 
-        if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
-          pageFlipRef.current?.flipNext("top");
-        } else {
-          isReadingActiveRef.current = false;
-          setIsReadingActive(false);
-          setIsSpeechPaused(false);
-        }
-      };
-      utterance.onerror = () => {
-        if (utteranceId === utteranceIdRef.current) {
-          isReadingActiveRef.current = false;
-          setIsReadingActive(false);
-          setIsSpeechPaused(false);
-        }
-      };
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        const shouldTrackWords = !safePages[clampedPageIndex]?.image;
+        const trackableWordCount = shouldTrackWords ? countTrackableWords(text) : 0;
+        speechAudioUrlRef.current = audioUrl;
+        speechAudioRef.current = audio;
+        speechAbortControllerRef.current = null;
 
-      window.speechSynthesis.speak(utterance);
+        audio.onended = () => {
+          if (utteranceId !== utteranceIdRef.current) {
+            return;
+          }
+
+          if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
+            advanceReadingAfterSpeech(clampedPageIndex);
+          } else {
+            finishSpeechReading();
+          }
+        };
+        audio.onerror = () => {
+          if (utteranceId === utteranceIdRef.current) {
+            finishSpeechReading();
+            setSpeechError("Unable to play generated speech.");
+          }
+        };
+
+        await audio.play();
+        startSpeechProgressTracking(audio, clampedPageIndex, trackableWordCount);
+      } catch (error) {
+        if (controller.signal.aborted || utteranceId !== utteranceIdRef.current) {
+          return;
+        }
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Unable to synthesize speech.";
+        setSpeechError(message);
+        if (utteranceId === utteranceIdRef.current) {
+          finishSpeechReading();
+        }
+      }
     }, 100);
-  }, [extractPdfText, isPdf, pageCount, safePages, speechSupported]);
+  }, [
+    advanceReadingAfterSpeech,
+    cleanupCurrentSpeechAudio,
+    clearAutoAdvanceFallback,
+    extractPdfText,
+    finishSpeechReading,
+    isPdf,
+    pageCount,
+    safePages,
+    speechSupported,
+    startSpeechProgressTracking,
+    ttsVoice,
+  ]);
 
   useEffect(() => {
     readCurrentPageRef.current = readCurrentPage;
@@ -707,6 +939,9 @@ export default function ChapterChaseReader({
           setFlipIndex(currentFlipIndex);
 
           if (currentFlipIndex > 0 && isReadingActiveRef.current) {
+            if (pendingAutoReadPageRef.current === currentReaderIndex) {
+              clearAutoAdvanceFallback();
+            }
             readCurrentPageRef.current(currentReaderIndex);
           }
         });
@@ -730,7 +965,20 @@ export default function ChapterChaseReader({
         pageFlipRef.current = null;
       }
     };
-  }, [author, bionicReading, fixedPageMode, format, highlighterMode, pageCount, readerDomKey, readerHighlights, safePages, title]);
+  }, [
+    author,
+    bionicReading,
+    clearAutoAdvanceFallback,
+    fixedPageMode,
+    format,
+    highlighterMode,
+    isToolbarCollapsed,
+    pageCount,
+    readerDomKey,
+    readerHighlights,
+    safePages,
+    title,
+  ]);
 
   useEffect(() => {
     if (fixedPageMode) {
@@ -766,18 +1014,23 @@ export default function ChapterChaseReader({
     }
     void audioContextRef.current?.resume();
 
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+    cleanupCurrentSpeechAudio();
+    setSpeechError(null);
     setIsSpeechUnlocked(true);
     isReadingActiveRef.current = true;
     setIsReadingActive(true);
 
     if (isOnCover) {
-      pageFlipRef.current?.flipNext("top");
+      if (pageFlipRef.current) {
+        pageFlipRef.current.flipNext("top");
+      } else {
+        setFlipIndex(1);
+        window.setTimeout(() => readCurrentPage(0), 160);
+      }
     } else {
       readCurrentPage(pageIndex);
     }
-  }, [isOnCover, pageIndex, readCurrentPage, speechSupported]);
+  }, [cleanupCurrentSpeechAudio, isOnCover, pageIndex, readCurrentPage, speechSupported]);
 
   const toggleSpeech = () => {
     if (!speechSupported) {
@@ -790,15 +1043,24 @@ export default function ChapterChaseReader({
     }
 
     if (isReadingActive && !isSpeechPaused) {
-      window.speechSynthesis.pause();
+      speechAbortControllerRef.current?.abort();
+      speechAudioRef.current?.pause();
       isReadingActiveRef.current = false;
       setIsReadingActive(false);
       setIsSpeechPaused(true);
       return;
     }
 
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
+    const pausedAudio = speechAudioRef.current;
+    if (pausedAudio && pausedAudio.paused && !pausedAudio.ended) {
+      void pausedAudio.play().catch((error: unknown) => {
+        setSpeechError(error instanceof Error ? error.message : "Unable to resume speech.");
+        finishSpeechReading();
+      });
+      const progressMeta = speechProgressMetaRef.current;
+      if (progressMeta) {
+        startSpeechProgressTracking(pausedAudio, progressMeta.pageIndex, progressMeta.wordCount);
+      }
       isReadingActiveRef.current = true;
       setIsReadingActive(true);
       setIsSpeechPaused(false);
@@ -812,15 +1074,18 @@ export default function ChapterChaseReader({
 
   const stopSpeech = () => {
     utteranceIdRef.current += 1;
-    if (speechTimerRef.current) {
-      window.clearTimeout(speechTimerRef.current);
-      speechTimerRef.current = null;
-    }
-    window.speechSynthesis?.cancel();
-    isReadingActiveRef.current = false;
-    setIsReadingActive(false);
-    setIsSpeechPaused(false);
+    cleanupCurrentSpeechAudio();
+    finishSpeechReading();
   };
+
+  const toggleToolbarCollapsed = useCallback(() => {
+    setIsToolbarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem(readerToolbarCollapsedStorageKey, JSON.stringify(next));
+      window.requestAnimationFrame(() => pageFlipRef.current?.update());
+      return next;
+    });
+  }, []);
 
   const averageWpm = sessionStats.seconds > 0 ? Math.max(120, Math.round(sessionStats.words / (sessionStats.seconds / 60))) : 220;
   const remainingWords = useMemo(() => safePages.slice(pageIndex + 1).reduce((sum, page) => sum + countWords(page.text), 0), [pageIndex, safePages]);
@@ -1045,13 +1310,10 @@ export default function ChapterChaseReader({
   useEffect(() => {
     return () => {
       utteranceIdRef.current += 1;
-      if (speechTimerRef.current) {
-        window.clearTimeout(speechTimerRef.current);
-      }
-      window.speechSynthesis?.cancel();
+      cleanupCurrentSpeechAudio();
       void audioContextRef.current?.close();
     };
-  }, []);
+  }, [cleanupCurrentSpeechAudio]);
 
   return (
     <main
@@ -1060,6 +1322,7 @@ export default function ChapterChaseReader({
       data-sprint-active={sprintState.active ? "true" : "false"}
       data-fixed-page-mode={fixedPageMode ? "true" : "false"}
       data-highlighter-mode={highlighterMode ? "true" : "false"}
+      data-toolbar-collapsed={isToolbarCollapsed ? "true" : "false"}
       style={readerShellStyle}
     >
       {sprintState.active ? (
@@ -1265,7 +1528,40 @@ export default function ChapterChaseReader({
         )}
       </section>
 
-      <footer className="reader-tts-panel">
+      <footer className="reader-tts-panel" data-collapsed={isToolbarCollapsed ? "true" : "false"}>
+        <button
+          className="reader-toolbar-collapse-toggle"
+          aria-label={isToolbarCollapsed ? "Show reader controls" : "Hide reader controls"}
+          aria-expanded={!isToolbarCollapsed}
+          onClick={toggleToolbarCollapsed}
+        >
+          {isToolbarCollapsed ? <ChevronsUp size={18} /> : <ChevronsDown size={18} />}
+          <span>{isToolbarCollapsed ? "Controls" : "Hide"}</span>
+        </button>
+
+        <div className="reader-toolbar-collapsed-actions" aria-hidden={!isToolbarCollapsed}>
+          <span className="reader-toolbar-collapsed-status">
+            {isReadingActive && !isSpeechPaused ? "Reading" : isSpeechPaused ? "Paused" : "Ready"}
+          </span>
+          <button
+            className="reader-toolbar-mini-button"
+            onClick={isSpeechUnlocked ? toggleSpeech : unlockSpeechAndStart}
+            disabled={!speechSupported}
+            aria-label={isReadingActive && !isSpeechPaused ? "Pause reading" : "Play reading"}
+          >
+            {isReadingActive && !isSpeechPaused ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+          </button>
+          <button
+            className="reader-toolbar-mini-button"
+            onClick={stopSpeech}
+            disabled={!isReadingActive && !isSpeechPaused}
+            aria-label="Stop reading"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="reader-toolbar-content" aria-hidden={isToolbarCollapsed}>
         <button className="icon-button" onClick={() => goToFlipPage(flipIndex - 1)} disabled={flipIndex === 0}>
           <ChevronLeft size={22} />
         </button>
@@ -1279,7 +1575,7 @@ export default function ChapterChaseReader({
           <button
             className="reader-start-button"
             onClick={unlockSpeechAndStart}
-            disabled={!speechSupported || currentPage.loading || (!isPdf && !currentPage.text.trim())}
+            disabled={!speechSupported}
           >
             Start Reading
           </button>
@@ -1287,7 +1583,7 @@ export default function ChapterChaseReader({
           <button
             className="reader-play"
             onClick={toggleSpeech}
-            disabled={!speechSupported || currentPage.loading || (!isOnCover && !isPdf && !currentPage.text.trim())}
+            disabled={!speechSupported}
           >
             {isReadingActive && !isSpeechPaused ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
             <span>{isReadingActive && !isSpeechPaused ? "Pause" : "Play"}</span>
@@ -1297,6 +1593,12 @@ export default function ChapterChaseReader({
         <button className="reader-stop-button" onClick={stopSpeech} disabled={!isReadingActive && !isSpeechPaused}>
           Stop
         </button>
+
+        {speechError ? (
+          <span className="reader-tts-status" role="status">
+            {speechError}
+          </span>
+        ) : null}
 
         <label className="reader-fixed-mode-toggle">
           <span>Fixed Page Mode</span>
@@ -1409,6 +1711,7 @@ export default function ChapterChaseReader({
           <span>{minutesLeft}m left in chapter</span>
           <strong>{finishPrediction}</strong>
         </div>
+        </div>
       </footer>
     </main>
   );
@@ -1416,6 +1719,14 @@ export default function ChapterChaseReader({
 
 function countWords(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+function countTrackableWords(text: string) {
+  return text.split(/(\s+)/).filter(isTrackableWordToken).length;
+}
+
+function isTrackableWordToken(token: string) {
+  return /[A-Za-z0-9]/.test(token);
 }
 
 function formatFinishPrediction(minutesLeft: number) {
@@ -1472,7 +1783,7 @@ function ScrollReaderPages({
               <>
                 {page.title ? <p className="reader-page-title mb-4 text-xs uppercase tracking-[0.22em]">{page.title}</p> : null}
                 <p className="reader-page-text whitespace-pre-wrap">
-                  {renderHighlightedText(page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading)}
+                  {renderHighlightedText(page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading, index)}
                 </p>
               </>
             )}
@@ -1519,6 +1830,23 @@ function loadFixedPageMode() {
   }
 }
 
+function loadToolbarCollapsed() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(readerToolbarCollapsedStorageKey);
+    if (stored !== null) {
+      return JSON.parse(stored) === true;
+    }
+  } catch {
+    return window.matchMedia("(max-width: 780px)").matches;
+  }
+
+  return window.matchMedia("(max-width: 780px)").matches;
+}
+
 function saveReaderTextSettings(settings: ReaderTextSettings) {
   window.localStorage.setItem(readerTextSettingsStorageKey, JSON.stringify(settings));
 }
@@ -1529,22 +1857,67 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function loadLocalReaderSettings(): LocalReaderSettings {
   if (typeof window === "undefined") {
-    return { bionicReading: false };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
   }
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as {
       activeReadingProfile?: unknown;
+      ttsVoice?: unknown;
       bionicReading?: unknown;
     };
     const activeReadingProfile = typeof parsed.activeReadingProfile === "string" ? parsed.activeReadingProfile : undefined;
     return {
       activeReadingProfile,
+      ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)),
       bionicReading: parsed.bionicReading === true,
     };
   } catch {
-    return { bionicReading: false };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
   }
+}
+
+async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal): Promise<Blob> {
+  const body = JSON.stringify({ text, voiceId });
+  if (typeof window.fetch === "function") {
+    const response = await window.fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? "Unable to synthesize speech.");
+    }
+
+    return response.blob();
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", "/api/tts");
+    request.responseType = "blob";
+    request.setRequestHeader("Content-Type", "application/json");
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve(request.response);
+        return;
+      }
+      reject(new Error("Unable to synthesize speech."));
+    };
+    request.onerror = () => reject(new Error("Unable to synthesize speech."));
+    signal.addEventListener(
+      "abort",
+      () => {
+        request.abort();
+        reject(new DOMException("Speech request was aborted.", "AbortError"));
+      },
+      { once: true }
+    );
+    request.send(body);
+  });
 }
 
 async function fetchBookFileBlob(bookId: string) {
@@ -1760,7 +2133,13 @@ function countOccurrences(haystack: string, needle: string) {
   return count;
 }
 
-function appendHighlightedText(container: HTMLElement, text: string, highlights: ReaderHighlight[], bionicReading: boolean) {
+function appendHighlightedText(
+  container: HTMLElement,
+  text: string,
+  highlights: ReaderHighlight[],
+  bionicReading: boolean,
+  pageIndex: number
+) {
   const ranges = highlights
     .map((highlight) => {
       const start = findOccurrenceIndex(text, highlight.text, highlight.occurrence);
@@ -1770,42 +2149,58 @@ function appendHighlightedText(container: HTMLElement, text: string, highlights:
     .sort((a, b) => a.start - b.start);
 
   let cursor = 0;
+  const tracker: ReaderWordTracker = { pageIndex, nextWordIndex: 0 };
   for (const range of ranges) {
     if (range.start < cursor) {
       continue;
     }
 
     if (range.start > cursor) {
-      appendReaderText(container, text.slice(cursor, range.start), bionicReading);
+      appendReaderText(container, text.slice(cursor, range.start), bionicReading, tracker);
     }
 
     const mark = document.createElement("mark");
     mark.className = "reader-highlight";
     mark.dataset.highlightId = range.highlight.id;
     mark.style.backgroundColor = range.highlight.color;
-    appendReaderText(mark, text.slice(range.start, range.end), bionicReading);
+    appendReaderText(mark, text.slice(range.start, range.end), bionicReading, tracker);
     container.appendChild(mark);
     cursor = range.end;
   }
 
   if (cursor < text.length) {
-    appendReaderText(container, text.slice(cursor), bionicReading);
+    appendReaderText(container, text.slice(cursor), bionicReading, tracker);
   }
 }
 
-function appendReaderText(container: HTMLElement, text: string, bionicReading: boolean) {
-  if (!bionicReading) {
-    container.appendChild(document.createTextNode(text));
-    return;
-  }
-
+function appendReaderText(container: HTMLElement, text: string, bionicReading: boolean, tracker?: ReaderWordTracker) {
   for (const token of text.split(/(\s+)/)) {
     if (!token || /^\s+$/.test(token)) {
       container.appendChild(document.createTextNode(token));
       continue;
     }
 
-    appendBionicToken(container, token);
+    if (!tracker || !isTrackableWordToken(token)) {
+      if (bionicReading) {
+        appendBionicToken(container, token);
+      } else {
+        container.appendChild(document.createTextNode(token));
+      }
+      continue;
+    }
+
+    const word = document.createElement("span");
+    word.className = "reader-word";
+    word.dataset.pageIndex = String(tracker.pageIndex);
+    word.dataset.wordIndex = String(tracker.nextWordIndex);
+    tracker.nextWordIndex += 1;
+
+    if (bionicReading) {
+      appendBionicToken(word, token);
+    } else {
+      word.textContent = token;
+    }
+    container.appendChild(word);
   }
 }
 
@@ -1832,7 +2227,7 @@ function appendBionicToken(container: HTMLElement, token: string) {
   }
 }
 
-function renderHighlightedText(text: string, highlights: ReaderHighlight[], bionicReading: boolean) {
+function renderHighlightedText(text: string, highlights: ReaderHighlight[], bionicReading: boolean, pageIndex: number) {
   const ranges = highlights
     .map((highlight) => {
       const start = findOccurrenceIndex(text, highlight.text, highlight.occurrence);
@@ -1843,6 +2238,7 @@ function renderHighlightedText(text: string, highlights: ReaderHighlight[], bion
 
   const nodes: ReactNode[] = [];
   let cursor = 0;
+  const tracker: ReaderWordTracker = { pageIndex, nextWordIndex: 0 };
 
   for (const range of ranges) {
     if (range.start < cursor) {
@@ -1850,7 +2246,7 @@ function renderHighlightedText(text: string, highlights: ReaderHighlight[], bion
     }
 
     if (range.start > cursor) {
-      nodes.push(...renderReaderText(text.slice(cursor, range.start), bionicReading, `text-${cursor}`));
+      nodes.push(...renderReaderText(text.slice(cursor, range.start), bionicReading, `text-${cursor}`, tracker));
     }
 
     nodes.push(
@@ -1860,34 +2256,45 @@ function renderHighlightedText(text: string, highlights: ReaderHighlight[], bion
         key={range.highlight.id}
         style={{ backgroundColor: range.highlight.color }}
       >
-        {renderReaderText(text.slice(range.start, range.end), bionicReading, `mark-${range.highlight.id}`)}
+        {renderReaderText(text.slice(range.start, range.end), bionicReading, `mark-${range.highlight.id}`, tracker)}
       </mark>
     );
     cursor = range.end;
   }
 
   if (cursor < text.length) {
-    nodes.push(...renderReaderText(text.slice(cursor), bionicReading, `text-${cursor}`));
+    nodes.push(...renderReaderText(text.slice(cursor), bionicReading, `text-${cursor}`, tracker));
   }
 
   return nodes;
 }
 
-function renderReaderText(text: string, bionicReading: boolean, keyPrefix: string): ReactNode[] {
-  if (!bionicReading) {
-    return [text];
-  }
-
+function renderReaderText(text: string, bionicReading: boolean, keyPrefix: string, tracker?: ReaderWordTracker): ReactNode[] {
   return text.split(/(\s+)/).map((token, index) => {
     if (!token || /^\s+$/.test(token)) {
       return token;
     }
 
-    return renderBionicToken(token, `${keyPrefix}-${index}`);
+    if (!tracker || !isTrackableWordToken(token)) {
+      return bionicReading ? renderBionicToken(token, `${keyPrefix}-${index}`) : token;
+    }
+
+    const wordIndex = tracker.nextWordIndex;
+    tracker.nextWordIndex += 1;
+
+    return (
+      <span className="reader-word" data-page-index={tracker.pageIndex} data-word-index={wordIndex} key={`${keyPrefix}-${index}`}>
+        {bionicReading ? renderBionicTokenContent(token) : token}
+      </span>
+    );
   });
 }
 
 function renderBionicToken(token: string, key: string) {
+  return <span key={key}>{renderBionicTokenContent(token)}</span>;
+}
+
+function renderBionicTokenContent(token: string) {
   const match = /^([^A-Za-z0-9]*)([A-Za-z0-9]+(?:['\u2019-][A-Za-z0-9]+)*)([^A-Za-z0-9]*)$/.exec(token);
   if (!match) {
     return token;
@@ -1896,12 +2303,12 @@ function renderBionicToken(token: string, key: string) {
   const [, leading, word, trailing] = match;
   const boldLength = Math.max(1, Math.ceil(word.length * 0.4));
   return (
-    <span key={key}>
+    <>
       {leading}
       <b>{word.slice(0, boldLength)}</b>
       {word.slice(boldLength)}
       {trailing}
-    </span>
+    </>
   );
 }
 
@@ -1981,7 +2388,7 @@ function createContentPageElement(page: FlipPage, index: number, highlights: Rea
 
     const text = document.createElement("p");
     text.className = "reader-page-text whitespace-pre-wrap text-lg leading-9 md:text-xl md:leading-10";
-    appendHighlightedText(text, page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading);
+    appendHighlightedText(text, page.text, highlights.filter((highlight) => highlight.pageIndex === index), bionicReading, index);
     content.appendChild(text);
   }
 
@@ -1993,8 +2400,9 @@ function getResponsivePageFlipSize() {
   const viewportWidth = Math.max(320, window.innerWidth);
   const viewportHeight = Math.max(480, window.innerHeight);
   const isPortrait = viewportHeight >= viewportWidth;
+  const toolbarCollapsed = document.querySelector(".reader-shell")?.getAttribute("data-toolbar-collapsed") === "true";
   const horizontalChrome = isPortrait ? 18 : 36;
-  const verticalChrome = isPortrait ? 116 : 132;
+  const verticalChrome = toolbarCollapsed ? (isPortrait ? 82 : 96) : isPortrait ? 116 : 132;
   const availableWidth = Math.max(300, viewportWidth - horizontalChrome);
   const availableHeight = Math.max(420, viewportHeight - verticalChrome);
   const pageWidth = isPortrait ? availableWidth : Math.floor(availableWidth / 2);
