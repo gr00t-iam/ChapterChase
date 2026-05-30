@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS "User" (
   "resetPasswordToken" TEXT UNIQUE,
   "resetPasswordExpires" DATETIME,
   "readerTheme" TEXT NOT NULL DEFAULT 'paper',
+  "ttsVoice" TEXT NOT NULL DEFAULT '5',
   "uiLayout" TEXT NOT NULL DEFAULT 'flat',
   "defaultReadingMode" TEXT NOT NULL DEFAULT 'auto',
   "blurUnreadSummaries" BOOLEAN NOT NULL DEFAULT false,
@@ -186,6 +187,7 @@ addColumnIfMissing("User", "verificationToken", "TEXT");
 addColumnIfMissing("User", "resetPasswordToken", "TEXT");
 addColumnIfMissing("User", "resetPasswordExpires", "DATETIME");
 addColumnIfMissing("User", "uiLayout", "TEXT NOT NULL DEFAULT 'flat'");
+addColumnIfMissing("User", "ttsVoice", "TEXT NOT NULL DEFAULT '5'");
 addColumnIfMissing("User", "defaultReadingMode", "TEXT NOT NULL DEFAULT 'auto'");
 addColumnIfMissing("User", "blurUnreadSummaries", "BOOLEAN NOT NULL DEFAULT false");
 addColumnIfMissing("User", "disableAnimations", "BOOLEAN NOT NULL DEFAULT false");
