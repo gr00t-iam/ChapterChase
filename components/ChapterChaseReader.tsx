@@ -12,6 +12,15 @@ import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
 import { defaultKokoroVoiceId, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import {
+  getLocalKokoroInstallState,
+  normalizeTtsEngine,
+  shouldUseLocalKokoro,
+  supportsLocalKokoroRuntime,
+  synthesizeLocalKokoroBlob,
+  warmLocalKokoroTts,
+  type TtsEngine,
+} from "@/lib/local-kokoro-tts";
+import {
   splitTextIntoTtsChunks,
   ttsChunkRequestTimeoutMs,
   ttsInitialRequestTimeoutMs,
@@ -155,6 +164,7 @@ const defaultReaderTextSettings: ReaderTextSettings = {
 type LocalReaderSettings = {
   activeReadingProfile?: string;
   ttsVoice?: string;
+  ttsEngine: TtsEngine;
   bionicReading: boolean;
 };
 
@@ -193,6 +203,7 @@ export default function ChapterChaseReader({
   const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>({
     bionicReading: false,
     ttsVoice: String(resolveKokoroVoiceId(initialTtsVoice)),
+    ttsEngine: "auto",
   });
   const [ttsVoice, setTtsVoice] = useState(() => String(resolveKokoroVoiceId(initialTtsVoice)));
   const [readerTheme, setReaderTheme] = useState(normalizedInitialTheme);
@@ -243,6 +254,7 @@ export default function ChapterChaseReader({
   const pageEnteredAtRef = useRef(0);
   const lastAnalyticsPageRef = useRef(pageIndex);
   const bionicReading = localReaderSettings.bionicReading;
+  const ttsEngine = localReaderSettings.ttsEngine;
   const readerShellStyle = useMemo(
     () =>
       ({
@@ -786,9 +798,10 @@ export default function ChapterChaseReader({
             blob = await prefetch.promise;
             speechPrefetchRef.current = null;
           } else {
-            blob = await fetchTtsAudioBlob(
+            blob = await fetchPreferredTtsAudioBlob(
               chunk.text,
               ttsVoice,
+              ttsEngine,
               controller.signal,
               chunkIndex === 0 ? ttsInitialRequestTimeoutMs : ttsChunkRequestTimeoutMs
             );
@@ -803,7 +816,7 @@ export default function ChapterChaseReader({
             speechPrefetchRef.current = {
               index: nextIndex,
               controller: nextController,
-              promise: fetchTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal, ttsChunkRequestTimeoutMs),
+              promise: fetchPreferredTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, ttsEngine, nextController.signal, ttsChunkRequestTimeoutMs),
             };
           } else if (nextIndex >= meta.chunks.length && clampedPageIndex < pageCount - 1) {
             void prefetchFirstTtsChunkForPage(clampedPageIndex + 1);
@@ -864,7 +877,7 @@ export default function ChapterChaseReader({
       }
 
       const controller = new AbortController();
-      await fetchTtsAudioBlob(firstChunk.text, ttsVoice, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
+      await fetchPreferredTtsAudioBlob(firstChunk.text, ttsVoice, ttsEngine, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
     }
   }, [
     advanceReadingAfterSpeech,
@@ -877,6 +890,7 @@ export default function ChapterChaseReader({
     safePages,
     speechSupported,
     startSpeechProgressTracking,
+    ttsEngine,
     ttsVoice,
   ]);
 
@@ -889,9 +903,16 @@ export default function ChapterChaseReader({
       return;
     }
 
-    const timer = window.setTimeout(() => warmKokoroTts(ttsVoice), 650);
+    const timer = window.setTimeout(() => {
+      const shouldWarmLocal = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+      if (shouldWarmLocal) {
+        void warmLocalKokoroTts().catch(() => warmKokoroTts(ttsVoice));
+        return;
+      }
+      warmKokoroTts(ttsVoice);
+    }, 650);
     return () => window.clearTimeout(timer);
-  }, [speechSupported, ttsVoice]);
+  }, [speechSupported, ttsEngine, ttsVoice]);
 
   useEffect(() => {
     if (!isPdf) {
@@ -1536,6 +1557,11 @@ export default function ChapterChaseReader({
           <feBlend in="SourceGraphic" in2="inkNoise" mode="multiply" />
         </filter>
       </svg>
+      {speechError ? (
+        <p className="reader-speech-status-sr" role="status">
+          {speechError}
+        </p>
+      ) : null}
       <header className="reader-topbar">
         <button aria-label="Close reader" onClick={() => window.history.back()} className="icon-button">
           <X size={20} />
@@ -1747,7 +1773,7 @@ export default function ChapterChaseReader({
 
         <div className="reader-toolbar-collapsed-actions" aria-hidden={!isToolbarCollapsed}>
           <span className="reader-toolbar-collapsed-status">
-            {isSpeechGenerating ? "Generating" : isReadingActive && !isSpeechPaused ? "Reading" : isSpeechPaused ? "Paused" : "Ready"}
+            {isReadingActive && !isSpeechPaused ? "Reading" : isSpeechPaused ? "Paused" : "Ready"}
           </span>
           <button
             className="reader-toolbar-mini-button"
@@ -1799,16 +1825,6 @@ export default function ChapterChaseReader({
         <button className="reader-stop-button" onClick={stopSpeech} disabled={!isReadingActive && !isSpeechPaused}>
           Stop
         </button>
-
-        {speechError ? (
-          <span className="reader-tts-status" role="status">
-            {speechError}
-          </span>
-        ) : isSpeechGenerating ? (
-          <span className="reader-tts-status" role="status">
-            Generating audio...
-          </span>
-        ) : null}
 
         <label className="reader-fixed-mode-toggle">
           <span>Fixed Page Mode</span>
@@ -2070,23 +2086,25 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function loadLocalReaderSettings(): LocalReaderSettings {
   if (typeof window === "undefined") {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" };
   }
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as {
       activeReadingProfile?: unknown;
       ttsVoice?: unknown;
+      ttsEngine?: unknown;
       bionicReading?: unknown;
     };
     const activeReadingProfile = typeof parsed.activeReadingProfile === "string" ? parsed.activeReadingProfile : undefined;
     return {
       activeReadingProfile,
       ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)),
+      ttsEngine: normalizeTtsEngine(parsed.ttsEngine),
       bionicReading: parsed.bionicReading === true,
     };
   } catch {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" };
   }
 }
 
@@ -2108,6 +2126,28 @@ function warmKokoroTts(voiceId: string) {
   request.open("POST", "/api/tts/warmup");
   request.setRequestHeader("Content-Type", "application/json");
   request.send(body);
+}
+
+async function fetchPreferredTtsAudioBlob(
+  text: string,
+  voiceId: string,
+  ttsEngine: TtsEngine,
+  signal: AbortSignal,
+  timeoutMs = ttsChunkRequestTimeoutMs
+): Promise<Blob> {
+  const shouldTryLocal = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+  if (shouldTryLocal) {
+    try {
+      return await synthesizeLocalKokoroBlob(text, voiceId, signal);
+    } catch (error) {
+      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        throw error;
+      }
+      console.warn("On-device Kokoro failed; falling back to server TTS.", error);
+    }
+  }
+
+  return fetchTtsAudioBlob(text, voiceId, signal, timeoutMs);
 }
 
 async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal, timeoutMs = ttsChunkRequestTimeoutMs): Promise<Blob> {

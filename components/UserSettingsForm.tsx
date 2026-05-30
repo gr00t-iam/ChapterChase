@@ -1,10 +1,20 @@
 "use client";
 
-import { Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClientId } from "@/lib/client-id";
 import { defaultKokoroVoiceId, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import {
+  getLocalKokoroInstallState,
+  installLocalKokoroModel,
+  isLocalKokoroReady,
+  localKokoroDownloadDescription,
+  normalizeTtsEngine,
+  supportsLocalKokoroRuntime,
+  type LocalKokoroInstallState,
+  type TtsEngine,
+} from "@/lib/local-kokoro-tts";
 
 type ReadingProfile = {
   id: string;
@@ -49,13 +59,21 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Account");
   const [status, setStatus] = useState<string | null>(null);
+  const [initialLocalSettings] = useState(loadLocalUserSettings);
   const [form, setForm] = useState(() => ({
     ...user,
     ttsVoice: String(resolveKokoroVoiceId(user.ttsVoice)),
     annotationHighlightColors: parseColors(user.annotationHighlightColors),
     readingProfiles: parseProfiles(user.readingProfiles),
   }));
-  const [bionicReading, setBionicReading] = useState(() => loadLocalUserSettings().bionicReading);
+  const [bionicReading, setBionicReading] = useState(initialLocalSettings.bionicReading);
+  const [ttsEngine, setTtsEngine] = useState<TtsEngine>(initialLocalSettings.ttsEngine);
+  const [localKokoroState, setLocalKokoroState] = useState<LocalKokoroInstallState>(() =>
+    typeof window === "undefined" ? { status: "not-installed" } : getLocalKokoroInstallState()
+  );
+  const [localKokoroProgress, setLocalKokoroProgress] = useState<string | null>(null);
+  const [isInstallingLocalKokoro, setIsInstallingLocalKokoro] = useState(false);
+  const localKokoroReady = isLocalKokoroReady(localKokoroState);
 
   const payload = useMemo(
     () => ({
@@ -125,10 +143,17 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
     saveLocalUserSettings({
       activeReadingProfile: form.readerTheme,
       ttsVoice: form.ttsVoice,
+      ttsEngine,
       bionicReading,
       readingProfiles: form.readingProfiles,
     });
-  }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice]);
+  }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice, ttsEngine]);
+
+  useEffect(() => {
+    const refreshLocalKokoroState = () => setLocalKokoroState(getLocalKokoroInstallState());
+    window.addEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
+    return () => window.removeEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
+  }, []);
 
   async function save() {
     setStatus(null);
@@ -161,6 +186,31 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
 
     setStatus("Library entries cleared. Your book files were not deleted.");
     startTransition(() => router.refresh());
+  }
+
+  async function prepareLocalKokoro() {
+    if (isInstallingLocalKokoro) {
+      return;
+    }
+
+    if (!supportsLocalKokoroRuntime()) {
+      setLocalKokoroProgress("This browser cannot run on-device Kokoro.");
+      return;
+    }
+
+    setIsInstallingLocalKokoro(true);
+    setLocalKokoroProgress("Preparing on-device Kokoro...");
+    try {
+      const nextState = await installLocalKokoroModel({
+        onProgress: (progress) => setLocalKokoroProgress(progress.message),
+      });
+      setLocalKokoroState(nextState);
+      setTtsEngine("local");
+    } catch {
+      setLocalKokoroProgress("Unable to download on-device Kokoro. Check the connection and try again.");
+    } finally {
+      setIsInstallingLocalKokoro(false);
+    }
   }
 
   return (
@@ -214,6 +264,32 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
                   ))}
                 </select>
               </label>
+              <label className="settings-field">
+                <span>Speech engine</span>
+                <select value={ttsEngine} onChange={(event) => setTtsEngine(normalizeTtsEngine(event.target.value))}>
+                  <option value="auto">Auto</option>
+                  <option value="local">On-device Kokoro</option>
+                  <option value="server">Server Kokoro</option>
+                </select>
+              </label>
+              <div className="settings-field settings-local-tts">
+                <span>On-device Kokoro</span>
+                <div className="local-tts-card" data-ready={localKokoroReady ? "true" : "false"}>
+                  <div>
+                    <strong>Speaker 5 - am_adam</strong>
+                    <p>
+                      {localKokoroReady
+                        ? "Downloaded on this device. Auto and On-device modes can speak without the server TTS bottleneck."
+                        : `One-time ${localKokoroDownloadDescription} download for local speech on this device.`}
+                    </p>
+                  </div>
+                  <button className="secondary-button" onClick={prepareLocalKokoro} disabled={isInstallingLocalKokoro || localKokoroReady}>
+                    {isInstallingLocalKokoro ? <Loader2 className="settings-spin-icon" size={16} /> : localKokoroReady ? <CheckCircle2 size={16} /> : <Download size={16} />}
+                    {isInstallingLocalKokoro ? "Downloading" : localKokoroReady ? "Ready" : "Download"}
+                  </button>
+                  {localKokoroProgress ? <p className="local-tts-status">{localKokoroProgress}</p> : null}
+                </div>
+              </div>
               <Toggle label="Blur Unread Summaries" checked={form.blurUnreadSummaries} onChange={(value) => update("blurUnreadSummaries", value)} />
               <Toggle label="Disable Animations" checked={form.disableAnimations} onChange={(value) => update("disableAnimations", value)} />
               <Toggle
@@ -385,18 +461,22 @@ function isFactoryProfile(profile: ReadingProfile) {
 
 function loadLocalUserSettings() {
   if (typeof window === "undefined") {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" as TtsEngine };
   }
 
   try {
-    const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as { bionicReading?: unknown; ttsVoice?: unknown };
-    return { bionicReading: parsed.bionicReading === true, ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)) };
+    const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as { bionicReading?: unknown; ttsVoice?: unknown; ttsEngine?: unknown };
+    return {
+      bionicReading: parsed.bionicReading === true,
+      ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)),
+      ttsEngine: normalizeTtsEngine(parsed.ttsEngine),
+    };
   } catch {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId) };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" as TtsEngine };
   }
 }
 
-function saveLocalUserSettings(settings: { activeReadingProfile: string; ttsVoice: string; bionicReading: boolean; readingProfiles: ReadingProfile[] }) {
+function saveLocalUserSettings(settings: { activeReadingProfile: string; ttsVoice: string; ttsEngine: TtsEngine; bionicReading: boolean; readingProfiles: ReadingProfile[] }) {
   if (typeof window === "undefined") {
     return;
   }

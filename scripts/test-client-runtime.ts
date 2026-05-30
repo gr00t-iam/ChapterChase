@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
 import { createClientId } from "../lib/client-id";
+import {
+  isLocalKokoroReady,
+  localKokoroDtype,
+  localKokoroModelId,
+  localKokoroVoiceId,
+  normalizeTtsEngine,
+  shouldUseLocalKokoro,
+  supportsLocalKokoroRuntime,
+} from "../lib/local-kokoro-tts";
 import { getServiceWorkerContainer } from "../lib/offline-client";
 import { defaultTtsChunkMaxCharacters, splitTextIntoTtsChunks } from "../lib/tts-client";
 
@@ -52,3 +61,41 @@ assert.ok(
   splitTextIntoTtsChunks("word ".repeat(80)).every((chunk) => chunk.text.length <= defaultTtsChunkMaxCharacters),
   "default TTS chunks should stay short enough for quick first audio generation"
 );
+
+assert.equal(normalizeTtsEngine("local"), "local", "local TTS engine preference should be accepted");
+assert.equal(normalizeTtsEngine("server"), "server", "server TTS engine preference should be accepted");
+assert.equal(normalizeTtsEngine("invalid"), "auto", "unknown TTS engine preferences should fall back to auto");
+assert.equal(shouldUseLocalKokoro("local", { status: "not-installed" }), true, "explicit local mode should attempt on-device TTS");
+assert.equal(shouldUseLocalKokoro("server", { status: "ready" }), false, "server mode should bypass on-device TTS");
+assert.equal(
+  shouldUseLocalKokoro("auto", { status: "ready", modelId: localKokoroModelId, voice: localKokoroVoiceId, dtype: localKokoroDtype }),
+  true,
+  "auto mode should use on-device TTS after the Kokoro model is installed"
+);
+assert.equal(shouldUseLocalKokoro("auto", { status: "not-installed" }), false, "auto mode should use server TTS until local Kokoro is ready");
+assert.equal(
+  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voice: localKokoroVoiceId, dtype: localKokoroDtype }),
+  true,
+  "the local Kokoro install marker should require the expected model, voice, and dtype"
+);
+assert.equal(
+  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voice: "af_heart", dtype: localKokoroDtype }),
+  false,
+  "a stale local Kokoro install marker for another voice should not be treated as ready"
+);
+
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+Object.defineProperty(globalThis, "window", {
+  configurable: true,
+  value: {
+    fetch() {
+      return undefined;
+    },
+  },
+});
+assert.equal(supportsLocalKokoroRuntime(), false, "on-device Kokoro should require browser Worker support to keep the reader responsive");
+if (originalWindowDescriptor) {
+  Object.defineProperty(globalThis, "window", originalWindowDescriptor);
+} else {
+  delete (globalThis as { window?: Window }).window;
+}

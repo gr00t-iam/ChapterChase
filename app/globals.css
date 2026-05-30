@@ -2977,6 +2977,15 @@ select {
   line-height: 1.25;
 }
 
+.reader-speech-status-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .reader-tts-field {
   display: flex;
   min-width: 0;
@@ -3613,6 +3622,56 @@ select {
   box-shadow: 0 0 0 3px rgb(52 211 153 / 0.12);
 }
 
+.settings-local-tts {
+  grid-column: span 2;
+}
+
+.local-tts-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 8px;
+  background: #171918;
+  padding: 0.85rem;
+}
+
+.local-tts-card[data-ready="true"] {
+  border-color: rgb(52 211 153 / 0.32);
+  background: rgb(20 83 45 / 0.18);
+}
+
+.local-tts-card strong {
+  color: rgb(244 244 245);
+  font-size: 0.94rem;
+}
+
+.local-tts-card p {
+  margin-top: 0.25rem;
+  color: rgb(161 161 170);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.local-tts-card .secondary-button {
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.local-tts-card .secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.local-tts-status {
+  grid-column: 1 / -1;
+}
+
+.settings-spin-icon {
+  animation: reader-spin 850ms linear infinite;
+}
+
 .settings-actions {
   display: flex;
   align-items: center;
@@ -3963,6 +4022,14 @@ select {
 
   .preferences-tabs button {
     white-space: nowrap;
+  }
+
+  .settings-local-tts {
+    grid-column: auto;
+  }
+
+  .local-tts-card {
+    grid-template-columns: 1fr;
   }
 }
 
