@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const wav = synthesizeWithSherpaKokoro(text, body?.voiceId ?? body?.voice ?? user.ttsVoice);
+    const wav = await synthesizeWithSherpaKokoro(text, body?.voiceId ?? body?.voice ?? user.ttsVoice);
     return new Response(new Uint8Array(wav), {
       headers: {
         "Content-Type": "audio/wav",

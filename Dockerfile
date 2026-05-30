@@ -2,7 +2,9 @@ FROM node:20-bullseye-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
-RUN npm ci
+# Ensure platform-specific optional dependencies (e.g. sherpa-onnx-* runtimes) are installed
+# even if the build environment sets npm omit flags.
+RUN npm ci --include=optional
 
 FROM node:20-bullseye-slim AS builder
 WORKDIR /app

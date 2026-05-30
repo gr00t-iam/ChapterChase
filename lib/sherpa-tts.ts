@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { defaultKokoroVoiceId, getKokoroVoiceName, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import { dataDir } from "@/lib/paths";
-import { OfflineTts } from "sherpa-onnx-node";
+import type { OfflineTts } from "sherpa-onnx-node";
 
 const maxTtsCharacters = 12000;
 const requiredModelEntries = ["model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data"] as const;
 
 let cachedTts: { modelDir: string; tts: OfflineTts } | null = null;
+let cachedOfflineTtsCtorPromise: Promise<new (config: unknown) => OfflineTts> | null = null;
 
 export class SherpaTtsSetupError extends Error {
   constructor(message: string) {
@@ -24,14 +25,14 @@ export function getSherpaTtsConfigSummary() {
   };
 }
 
-export function synthesizeWithSherpaKokoro(text: string, voice: unknown = defaultKokoroVoiceId) {
+export async function synthesizeWithSherpaKokoro(text: string, voice: unknown = defaultKokoroVoiceId) {
   const normalizedText = normalizeTtsText(text);
   if (!normalizedText) {
     throw new Error("Text is required.");
   }
 
   const voiceId = resolveKokoroVoiceId(voice);
-  const tts = getOfflineTts();
+  const tts = await getOfflineTts();
   const audio = tts.generate({
     text: normalizedText,
     sid: voiceId,
@@ -41,7 +42,7 @@ export function synthesizeWithSherpaKokoro(text: string, voice: unknown = defaul
   return encodeMonoPcm16Wav(audio.samples, audio.sampleRate);
 }
 
-function getOfflineTts() {
+async function getOfflineTts() {
   const modelDir = getKokoroModelDir();
   if (cachedTts?.modelDir === modelDir) {
     return cachedTts.tts;
@@ -49,7 +50,8 @@ function getOfflineTts() {
 
   validateKokoroModelDir(modelDir);
 
-  const tts = new OfflineTts({
+  const OfflineTtsCtor = await getOfflineTtsConstructor();
+  const tts = new OfflineTtsCtor({
     model: {
       kokoro: {
         model: toSherpaModelPath(path.join(modelDir, "model.onnx")),
@@ -68,6 +70,28 @@ function getOfflineTts() {
 
   cachedTts = { modelDir, tts };
   return tts;
+}
+
+async function getOfflineTtsConstructor(): Promise<new (config: unknown) => OfflineTts> {
+  if (!cachedOfflineTtsCtorPromise) {
+    cachedOfflineTtsCtorPromise = (async () => {
+      try {
+        // Avoid loading the native addon at Next.js build time; only load when TTS is actually used.
+        const mod = (await import("sherpa-onnx-node")) as { OfflineTts?: new (config: unknown) => OfflineTts };
+        if (!mod?.OfflineTts) {
+          throw new Error("sherpa-onnx-node did not export OfflineTts.");
+        }
+        return mod.OfflineTts;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new SherpaTtsSetupError(
+          `Unable to load sherpa-onnx-node. This is usually caused by missing platform optional dependencies inside the container (e.g. sherpa-onnx-linux-x64 or sherpa-onnx-linux-arm64). Error: ${message}`
+        );
+      }
+    })();
+  }
+
+  return cachedOfflineTtsCtorPromise;
 }
 
 function getKokoroModelDir() {
