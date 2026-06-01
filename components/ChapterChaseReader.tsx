@@ -21,6 +21,8 @@ import {
   type TtsEngine,
 } from "@/lib/local-kokoro-tts";
 import {
+  generatedSpeechWordTrackingEnabled,
+  selectTtsChunkMaxCharacters,
   splitTextIntoTtsChunks,
   ttsChunkRequestTimeoutMs,
   ttsInitialRequestTimeoutMs,
@@ -769,8 +771,10 @@ export default function ChapterChaseReader({
       speechAbortControllerRef.current = controller;
 
       try {
-        const shouldTrackWords = !safePages[clampedPageIndex]?.image;
-        const chunks = splitTextIntoTtsChunks(text).map((chunk) => (shouldTrackWords ? chunk : { ...chunk, wordCount: 0 }));
+        const shouldTrackWords = generatedSpeechWordTrackingEnabled && !safePages[clampedPageIndex]?.image;
+        const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+        const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(shouldTryLocalTts);
+        const chunks = splitTextIntoTtsChunks(text, ttsChunkMaxCharacters).map((chunk) => (shouldTrackWords ? chunk : { ...chunk, wordCount: 0 }));
         speechChunkMetaRef.current = { pageIndex: clampedPageIndex, chunks, index: 0 };
 
         const playChunk = async (chunkIndex: number) => {
@@ -834,6 +838,8 @@ export default function ChapterChaseReader({
             speechAudioRef.current = audio;
           }
           speechAudioUrlRef.current = audioUrl;
+          audio.defaultPlaybackRate = 1;
+          audio.playbackRate = 1;
 
           audio.onended = () => {
             if (utteranceId !== utteranceIdRef.current) return;
@@ -871,7 +877,8 @@ export default function ChapterChaseReader({
 
     async function prefetchFirstTtsChunkForPage(nextPageIndex: number) {
       const nextText = isPdf ? await extractPdfText(nextPageIndex) : (safePages[nextPageIndex]?.text ?? "");
-      const firstChunk = splitTextIntoTtsChunks(nextText)[0];
+      const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+      const firstChunk = splitTextIntoTtsChunks(nextText, selectTtsChunkMaxCharacters(shouldTryLocalTts))[0];
       if (!firstChunk?.text) {
         return;
       }
@@ -2143,7 +2150,7 @@ async function fetchPreferredTtsAudioBlob(
       if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         throw error;
       }
-      console.warn("On-device Kokoro failed; falling back to server TTS.", error);
+      console.warn("On-device speech failed; falling back to server TTS.", error);
     }
   }
 
@@ -2178,7 +2185,7 @@ async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSig
       return response.blob();
     } catch (error) {
       if (requestController.signal.aborted && !signal.aborted) {
-        throw new Error("Kokoro TTS took too long to generate audio. Try again in a moment while the model finishes warming up.");
+        throw new Error("Speech took too long to generate audio. Try again in a moment while the model finishes warming up.");
       }
       throw error;
     } finally {
@@ -2210,7 +2217,7 @@ async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSig
     request.ontimeout = () => {
       window.clearTimeout(timeout);
       signal.removeEventListener("abort", abortRequest);
-      reject(new Error("Kokoro TTS took too long to generate audio. Try again in a moment while the model finishes warming up."));
+      reject(new Error("Speech took too long to generate audio. Try again in a moment while the model finishes warming up."));
     };
     signal.addEventListener(
       "abort",

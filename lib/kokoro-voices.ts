@@ -1,17 +1,17 @@
-export const defaultKokoroVoiceId = 5;
+export const defaultKokoroVoiceId = 1;
 
 export const kokoroVoices = [
-  { id: 0, name: "af", label: "af - Female" },
-  { id: 1, name: "af_bella", label: "af_bella - Bella" },
-  { id: 2, name: "af_nicole", label: "af_nicole - Nicole" },
-  { id: 3, name: "af_sarah", label: "af_sarah - Sarah" },
-  { id: 4, name: "af_sky", label: "af_sky - Sky" },
-  { id: 5, name: "am_adam", label: "am_adam - Adam" },
-  { id: 6, name: "am_michael", label: "am_michael - Michael" },
-  { id: 7, name: "bf_emma", label: "bf_emma - Emma" },
-  { id: 8, name: "bf_isabella", label: "bf_isabella - Isabella" },
-  { id: 9, name: "bm_george", label: "bm_george - George" },
-  { id: 10, name: "bm_lewis", label: "bm_lewis - Lewis" },
+  { id: 0, name: "af_heart", label: "Heart" },
+  { id: 1, name: "af_bella", label: "Bella" },
+  { id: 2, name: "af_nicole", label: "Nicole" },
+  { id: 3, name: "af_sarah", label: "Sarah" },
+  { id: 4, name: "af_sky", label: "Sky" },
+  { id: 5, name: "am_adam", label: "Adam" },
+  { id: 6, name: "am_michael", label: "Michael" },
+  { id: 7, name: "bf_emma", label: "Emma" },
+  { id: 8, name: "bf_isabella", label: "Isabella" },
+  { id: 9, name: "bm_george", label: "George" },
+  { id: 10, name: "bm_lewis", label: "Lewis" },
 ] as const;
 
 export type KokoroVoiceId = (typeof kokoroVoices)[number]["id"];
@@ -31,7 +31,8 @@ export function resolveKokoroVoiceId(value: unknown): KokoroVoiceId {
     return findVoiceById(numeric)?.id ?? defaultKokoroVoiceId;
   }
 
-  return kokoroVoices.find((voice) => voice.name === trimmed)?.id ?? defaultKokoroVoiceId;
+  const normalizedLabel = trimmed.toLowerCase();
+  return kokoroVoices.find((voice) => voice.name === trimmed || voice.label.toLowerCase() === normalizedLabel)?.id ?? defaultKokoroVoiceId;
 }
 
 export function getKokoroVoiceName(id: number): string {

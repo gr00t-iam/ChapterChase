@@ -1,20 +1,26 @@
 "use client";
 
 import { CheckCircle2, Download, Loader2, Plus, Trash2, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClientId } from "@/lib/client-id";
-import { defaultKokoroVoiceId, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { defaultKokoroVoiceId, getKokoroVoiceName, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import {
+  getLocalKokoroModelProfile,
   getLocalKokoroInstallState,
+  getPreferredLocalKokoroProfileId,
   installLocalKokoroModel,
   isLocalKokoroReady,
-  localKokoroDownloadDescription,
+  localKokoroModelProfiles,
   normalizeTtsEngine,
+  resolveLocalKokoroProfileId,
+  savePreferredLocalKokoroProfileId,
   supportsLocalKokoroRuntime,
   type LocalKokoroInstallState,
+  type LocalKokoroModelProfileId,
   type TtsEngine,
 } from "@/lib/local-kokoro-tts";
+import { normalizeSettingsSection, settingsSectionPath, settingsSections, type SettingsSection } from "@/lib/settings-tabs";
 
 type ReadingProfile = {
   id: string;
@@ -41,7 +47,6 @@ type SettingsUser = {
   readingProfiles: string;
 };
 
-const tabs = ["Account", "Preferences", "Reading Profiles", "Annotations", "Social"] as const;
 const defaultColors = ["#facc15", "#38bdf8", "#fb7185", "#4ade80"];
 const defaultProfiles: ReadingProfile[] = [
   { id: "paper", name: "Paper", theme: "paper", fontScale: 1, lineHeight: 1.55 },
@@ -56,8 +61,9 @@ const defaultProfileIds = new Set(defaultProfiles.map((profile) => profile.id));
 
 export function UserSettingsForm({ user }: { user: SettingsUser }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = normalizeSettingsSection(searchParams.get("section"));
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Account");
   const [status, setStatus] = useState<string | null>(null);
   const [initialLocalSettings] = useState(loadLocalUserSettings);
   const [form, setForm] = useState(() => ({
@@ -68,12 +74,20 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   }));
   const [bionicReading, setBionicReading] = useState(initialLocalSettings.bionicReading);
   const [ttsEngine, setTtsEngine] = useState<TtsEngine>(initialLocalSettings.ttsEngine);
+  const [localKokoroProfileId, setLocalKokoroProfileId] = useState<LocalKokoroModelProfileId>(() =>
+    typeof window === "undefined" ? "balanced" : getPreferredLocalKokoroProfileId()
+  );
   const [localKokoroState, setLocalKokoroState] = useState<LocalKokoroInstallState>(() =>
     typeof window === "undefined" ? { status: "not-installed" } : getLocalKokoroInstallState()
   );
   const [localKokoroProgress, setLocalKokoroProgress] = useState<string | null>(null);
   const [isInstallingLocalKokoro, setIsInstallingLocalKokoro] = useState(false);
-  const localKokoroReady = isLocalKokoroReady(localKokoroState);
+  const selectedLocalKokoroProfile = getLocalKokoroModelProfile(localKokoroProfileId);
+  const selectedVoiceName = getKokoroVoiceName(resolveKokoroVoiceId(form.ttsVoice));
+  const localKokoroReady = isLocalKokoroReady(localKokoroState, localKokoroProfileId);
+  const localKokoroSelectedVoiceReady = localKokoroReady && localKokoroState.voice === selectedVoiceName;
+  const localKokoroActionDisabled = isInstallingLocalKokoro || (localKokoroReady && localKokoroSelectedVoiceReady);
+  const localKokoroActionLabel = isInstallingLocalKokoro ? "Downloading" : localKokoroReady && !localKokoroSelectedVoiceReady ? "Prepare Voice" : localKokoroReady ? "Ready" : "Download Model";
 
   const payload = useMemo(
     () => ({
@@ -86,6 +100,17 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
 
   function update<K extends keyof typeof form>(field: K, value: (typeof form)[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function switchSection(section: SettingsSection) {
+    router.replace(settingsSectionPath(section), { scroll: false });
+  }
+
+  function changeLocalKokoroProfile(value: string) {
+    const profileId = resolveLocalKokoroProfileId(value);
+    savePreferredLocalKokoroProfileId(profileId);
+    setLocalKokoroProfileId(profileId);
+    setLocalKokoroProgress(null);
   }
 
   function updateColor(index: number, value: string) {
@@ -150,7 +175,10 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice, ttsEngine]);
 
   useEffect(() => {
-    const refreshLocalKokoroState = () => setLocalKokoroState(getLocalKokoroInstallState());
+    const refreshLocalKokoroState = () => {
+      setLocalKokoroState(getLocalKokoroInstallState());
+      setLocalKokoroProfileId(getPreferredLocalKokoroProfileId());
+    };
     window.addEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
     return () => window.removeEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
   }, []);
@@ -194,20 +222,22 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
     }
 
     if (!supportsLocalKokoroRuntime()) {
-      setLocalKokoroProgress("This browser cannot run on-device Kokoro.");
+      setLocalKokoroProgress("This browser cannot run on-device speech.");
       return;
     }
 
     setIsInstallingLocalKokoro(true);
-    setLocalKokoroProgress("Preparing on-device Kokoro...");
+    setLocalKokoroProgress("Preparing on-device speech...");
     try {
       const nextState = await installLocalKokoroModel({
+        profileId: localKokoroProfileId,
+        voiceId: form.ttsVoice,
         onProgress: (progress) => setLocalKokoroProgress(progress.message),
       });
       setLocalKokoroState(nextState);
       setTtsEngine("local");
     } catch {
-      setLocalKokoroProgress("Unable to download on-device Kokoro. Check the connection and try again.");
+      setLocalKokoroProgress("Unable to download on-device speech. Check the connection and try again.");
     } finally {
       setIsInstallingLocalKokoro(false);
     }
@@ -216,8 +246,8 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   return (
     <section className="preferences-dashboard">
       <aside className="preferences-tabs" aria-label="Preferences sections">
-        {tabs.map((tab) => (
-          <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
+        {settingsSections.map((tab) => (
+          <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => switchSection(tab)}>
             {tab}
           </button>
         ))}
@@ -268,24 +298,44 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
                 <span>Speech engine</span>
                 <select value={ttsEngine} onChange={(event) => setTtsEngine(normalizeTtsEngine(event.target.value))}>
                   <option value="auto">Auto</option>
-                  <option value="local">On-device Kokoro</option>
-                  <option value="server">Server Kokoro</option>
+                  <option value="local">On-device</option>
+                  <option value="server">Server</option>
                 </select>
               </label>
               <div className="settings-field settings-local-tts">
-                <span>On-device Kokoro</span>
+                <span>On-device speech</span>
                 <div className="local-tts-card" data-ready={localKokoroReady ? "true" : "false"}>
                   <div>
-                    <strong>Speaker 5 - am_adam</strong>
+                    <strong>{selectedLocalKokoroProfile.label} local speech</strong>
                     <p>
-                      {localKokoroReady
+                      {localKokoroReady && localKokoroSelectedVoiceReady
                         ? "Downloaded on this device. Auto and On-device modes can speak without the server TTS bottleneck."
-                        : `One-time ${localKokoroDownloadDescription} download for local speech on this device.`}
+                        : localKokoroReady
+                          ? `${selectedLocalKokoroProfile.label} is downloaded. Prepare ${kokoroVoices.find((voice) => voice.name === selectedVoiceName)?.label ?? "this voice"} once to cache it on this device.`
+                          : `One-time ${selectedLocalKokoroProfile.downloadDescription} download for local speech on this device. The selected voice is cached once when prepared.`}
                     </p>
                   </div>
-                  <button className="secondary-button" onClick={prepareLocalKokoro} disabled={isInstallingLocalKokoro || localKokoroReady}>
-                    {isInstallingLocalKokoro ? <Loader2 className="settings-spin-icon" size={16} /> : localKokoroReady ? <CheckCircle2 size={16} /> : <Download size={16} />}
-                    {isInstallingLocalKokoro ? "Downloading" : localKokoroReady ? "Ready" : "Download"}
+                  <div className="local-tts-controls">
+                    <label className="local-tts-profile-select">
+                      <span>Download</span>
+                      <select value={localKokoroProfileId} onChange={(event) => changeLocalKokoroProfile(event.target.value)} disabled={isInstallingLocalKokoro}>
+                        {Object.values(localKokoroModelProfiles).map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.label} ({profile.downloadDescription})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button className="secondary-button" onClick={prepareLocalKokoro} disabled={localKokoroActionDisabled}>
+                    {isInstallingLocalKokoro ? (
+                      <Loader2 className="settings-spin-icon" size={16} />
+                    ) : localKokoroReady && localKokoroSelectedVoiceReady ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <Download size={16} />
+                    )}
+                    {localKokoroActionLabel}
                   </button>
                   {localKokoroProgress ? <p className="local-tts-status">{localKokoroProgress}</p> : null}
                 </div>

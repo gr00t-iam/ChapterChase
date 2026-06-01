@@ -5,8 +5,14 @@ export type TtsChunk = {
 };
 
 export const defaultTtsChunkMaxCharacters = 160;
+export const localTtsChunkMaxCharacters = 520;
+export const generatedSpeechWordTrackingEnabled = false;
 export const ttsInitialRequestTimeoutMs = 90000;
 export const ttsChunkRequestTimeoutMs = 45000;
+
+export function selectTtsChunkMaxCharacters(useLocalTts: boolean) {
+  return useLocalTts ? localTtsChunkMaxCharacters : defaultTtsChunkMaxCharacters;
+}
 
 export function countTrackableWords(text: string) {
   return text.split(/(\s+)/).filter(isTrackableWordToken).length;

@@ -1,28 +1,20 @@
 import { env, type ProgressCallback } from "@huggingface/transformers";
 import { KokoroTTS } from "kokoro-js";
-import localforage from "localforage";
-import { localKokoroDtype, localKokoroModelId, localKokoroVoiceId, type LocalKokoroProgress } from "@/lib/local-kokoro-config";
+import {
+  getLocalKokoroModelProfile,
+  localKokoroModelId,
+  localKokoroVoiceId,
+  type LocalKokoroModelProfileId,
+  type LocalKokoroProgress,
+} from "@/lib/local-kokoro-config";
 
 type KokoroTtsInstance = {
   generate(text: string, options?: { voice?: string; speed?: number }): Promise<{ toBlob(): Blob }>;
 };
 
-type TransformersCacheRecord = {
-  body: ArrayBuffer;
-  headers: Record<string, string>;
-  status: number;
-  statusText: string;
-  storedAt: number;
-};
-
-type TransformersCache = {
-  match(request: RequestInfo | URL): Promise<Response | undefined>;
-  put(request: RequestInfo | URL, response: Response): Promise<void>;
-};
-
 type WorkerRequest =
-  | { id: number; type: "install" | "warm" }
-  | { id: number; type: "synthesize"; text: string; voice: string }
+  | { id: number; type: "install" | "warm"; profileId: LocalKokoroModelProfileId; voice?: string }
+  | { id: number; type: "synthesize"; profileId: LocalKokoroModelProfileId; text: string; voice: string }
   | { id: number; type: "cancel" };
 
 type WorkerResponse =
@@ -41,7 +33,8 @@ type ProgressPayload = {
 };
 
 let ttsPromise: Promise<KokoroTtsInstance> | null = null;
-let transformersCachePromise: Promise<TransformersCache> | null = null;
+let ttsProfileId: LocalKokoroModelProfileId | null = null;
+let originalFetch: typeof fetch | null = null;
 const cancelledRequests = new Set<number>();
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
@@ -56,18 +49,18 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
 
 async function handleRequest(request: Exclude<WorkerRequest, { type: "cancel" }>) {
   try {
-    const tts = await loadTts(request.id);
+    const tts = await loadTts(request.id, request.profileId);
     throwIfCancelled(request.id);
 
     if (request.type === "synthesize") {
-      const audio = await tts.generate(request.text, { voice: request.voice });
+      const audio = await tts.generate(request.text, { voice: request.voice, speed: 1 });
       throwIfCancelled(request.id);
       postResponse({ id: request.id, type: "result", blob: audio.toBlob() });
       return;
     }
 
     if (request.type === "install") {
-      const audio = await tts.generate("Ready.", { voice: localKokoroVoiceId });
+      const audio = await tts.generate("Ready.", { voice: request.voice ?? localKokoroVoiceId, speed: 1 });
       audio.toBlob();
     }
 
@@ -82,27 +75,29 @@ async function handleRequest(request: Exclude<WorkerRequest, { type: "cancel" }>
     postResponse({
       id: request.id,
       type: "error",
-      message: error instanceof Error ? error.message : "On-device Kokoro failed.",
+      message: error instanceof Error ? error.message : "On-device speech failed.",
       name: error instanceof Error ? error.name : undefined,
     });
   }
 }
 
-async function loadTts(requestId: number) {
-  if (!ttsPromise) {
-    env.allowLocalModels = false;
-    env.useCustomCache = true;
-    env.customCache = await getTransformersCache();
+async function loadTts(requestId: number, profileId: LocalKokoroModelProfileId) {
+  const profile = getLocalKokoroModelProfile(profileId);
+  if (!ttsPromise || ttsProfileId !== profile.id) {
+    configureTransformersEnvironment();
+    configureVoiceFetchProxy();
 
-    postResponse({ id: requestId, type: "progress", progress: { message: "Downloading on-device Kokoro..." } });
+    postResponse({ id: requestId, type: "progress", progress: { message: "Downloading on-device speech..." } });
+    ttsProfileId = profile.id;
     ttsPromise = (KokoroTTS.from_pretrained(localKokoroModelId, {
-      dtype: localKokoroDtype,
+      dtype: profile.dtype,
       device: "wasm",
       progress_callback: ((payload: ProgressPayload) => {
         postResponse({ id: requestId, type: "progress", progress: formatProgress(payload) });
       }) as ProgressCallback,
     }) as Promise<KokoroTtsInstance>).catch((error) => {
       ttsPromise = null;
+      ttsProfileId = null;
       throw error;
     });
   }
@@ -110,67 +105,49 @@ async function loadTts(requestId: number) {
   return ttsPromise;
 }
 
-async function getTransformersCache() {
-  if (!transformersCachePromise) {
-    transformersCachePromise = createIndexedDbTransformersCache();
-  }
-  return transformersCachePromise;
+function configureTransformersEnvironment() {
+  env.allowLocalModels = false;
+  env.allowRemoteModels = true;
+  env.useCustomCache = false;
+  env.customCache = null;
+  env.useBrowserCache = true;
+  env.remoteHost = self.location.origin;
+  env.remotePathTemplate = "/api/tts/local-model/{model}/resolve/{revision}/";
 }
 
-async function createIndexedDbTransformersCache(): Promise<TransformersCache> {
-  const store = localforage.createInstance({
-    name: "chapterchase-local-kokoro-tts",
-    storeName: "hf_models",
-    description: "On-device Kokoro TTS model cache",
-  });
+function configureVoiceFetchProxy() {
+  if (originalFetch) {
+    return;
+  }
 
-  return {
-    async match(request) {
-      const key = cacheKey(request);
-      const record = await store.getItem<TransformersCacheRecord>(key);
-      if (!record) {
-        return undefined;
-      }
+  originalFetch = self.fetch.bind(self);
+  self.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const proxyUrl = getKokoroAssetProxyUrl(input);
+    if (!proxyUrl) {
+      return originalFetch?.(input, init) ?? fetch(input, init);
+    }
 
-      return new Response(record.body.slice(0), {
-        headers: record.headers,
-        status: record.status,
-        statusText: record.statusText,
-      });
-    },
-    async put(request, response) {
-      const key = cacheKey(request);
-      const cloned = response.clone();
-      const headers: Record<string, string> = {};
-      cloned.headers.forEach((value, header) => {
-        headers[header] = value;
-      });
+    if (input instanceof Request) {
+      return originalFetch?.(new Request(proxyUrl, input), init) ?? fetch(proxyUrl, init);
+    }
 
-      await store.setItem<TransformersCacheRecord>(key, {
-        body: await cloned.arrayBuffer(),
-        headers,
-        status: cloned.status,
-        statusText: cloned.statusText,
-        storedAt: Date.now(),
-      });
-    },
-  };
+    return originalFetch?.(proxyUrl, init) ?? fetch(proxyUrl, init);
+  }) as typeof fetch;
 }
 
-function cacheKey(request: RequestInfo | URL) {
-  if (typeof request === "string") {
-    return request;
+function getKokoroAssetProxyUrl(input: RequestInfo | URL) {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/";
+  if (!url.startsWith(base)) {
+    return null;
   }
 
-  if (request instanceof URL) {
-    return request.toString();
+  const assetPath = url.slice(base.length);
+  if (!/^voices\/[a-z]{2}_[a-z0-9_]+\.bin$/.test(assetPath)) {
+    return null;
   }
 
-  if (request instanceof Request) {
-    return request.url;
-  }
-
-  return String(request);
+  return `${self.location.origin}/api/tts/local-model/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/${assetPath}`;
 }
 
 function formatProgress(payload: ProgressPayload): LocalKokoroProgress {
@@ -183,11 +160,18 @@ function formatProgress(payload: ProgressPayload): LocalKokoroProgress {
         : undefined;
 
   const percent = typeof progress === "number" && Number.isFinite(progress) ? `${Math.max(0, Math.min(100, progress)).toFixed(0)}%` : null;
-  const message = percent
-    ? `Downloading ${fileName ?? "Kokoro"} ${percent}`
-    : payload.status === "ready"
-      ? "On-device Kokoro is ready."
-      : `Preparing ${fileName ?? "on-device Kokoro"}...`;
+  let message: string;
+  if (percent) {
+    message = `Downloading ${fileName ?? "speech model"} ${percent}`;
+  } else if (payload.status === "done") {
+    message = `Cached ${fileName ?? "on-device speech"}.`;
+  } else if (payload.status === "ready") {
+    message = "On-device speech is ready.";
+  } else if (payload.status === "download") {
+    message = `Starting ${fileName ?? "on-device speech"}...`;
+  } else {
+    message = `Preparing ${fileName ?? "on-device speech"}...`;
+  }
 
   return {
     message,
@@ -200,7 +184,7 @@ function formatProgress(payload: ProgressPayload): LocalKokoroProgress {
 function throwIfCancelled(requestId: number) {
   if (cancelledRequests.has(requestId)) {
     cancelledRequests.delete(requestId);
-    throw new DOMException("Local Kokoro request was cancelled.", "AbortError");
+    throw new DOMException("Local speech request was cancelled.", "AbortError");
   }
 }
 

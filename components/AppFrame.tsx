@@ -5,6 +5,7 @@ import { Menu, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ActivityIndicator } from "@/components/ActivityIndicator";
 import { AppNav } from "@/components/AppNav";
+import { settingsSectionPath } from "@/lib/settings-tabs";
 
 export const bookPreviewEvent = "chapterchase:book-preview";
 export const bookPreviewClearEvent = "chapterchase:book-preview-clear";
@@ -69,7 +70,12 @@ export function AppFrame({ user, isAdmin, children }: { user: ShellUser; isAdmin
         </form>
         <div className="ml-auto flex items-center gap-4 px-4 text-zinc-400">
           <ActivityIndicator />
-          <Link href="/settings" aria-label="User settings" className="hover:text-zinc-100">
+          <Link
+            href={settingsSectionPath("Account")}
+            aria-label="User settings"
+            title="User settings"
+            className="grid h-9 w-9 place-items-center rounded text-zinc-400 hover:bg-white/5 hover:text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
+          >
             <Settings size={18} />
           </Link>
           <span className="hidden text-sm md:inline">{user.name}</span>

@@ -3628,7 +3628,7 @@ select {
 
 .local-tts-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem) auto;
   gap: 0.85rem;
   align-items: center;
   border: 1px solid rgb(255 255 255 / 0.1);
@@ -3652,6 +3652,23 @@ select {
   color: rgb(161 161 170);
   font-size: 0.84rem;
   line-height: 1.45;
+}
+
+.local-tts-controls,
+.local-tts-profile-select {
+  min-width: 0;
+}
+
+.local-tts-profile-select {
+  display: grid;
+  gap: 0.35rem;
+  color: rgb(161 161 170);
+  font-size: 0.78rem;
+}
+
+.local-tts-profile-select select {
+  width: 100%;
+  min-height: 2.45rem;
 }
 
 .local-tts-card .secondary-button {

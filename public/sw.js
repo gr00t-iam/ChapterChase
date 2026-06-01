@@ -38,7 +38,16 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) {
+          return cached;
+        }
+        if (request.mode === "navigate") {
+          return (await caches.match("/")) || Response.error();
+        }
+        return Response.error();
+      })
   );
 });
 

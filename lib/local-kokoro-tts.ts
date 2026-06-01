@@ -1,33 +1,47 @@
 import { getKokoroVoiceName } from "@/lib/kokoro-voices";
 import {
-  localKokoroDtype,
+  getLocalKokoroModelProfile,
+  localKokoroCacheVersion,
+  localKokoroDefaultProfileId,
+  localKokoroModelProfiles,
   localKokoroModelId,
+  localKokoroProfileStorageKey,
   localKokoroStorageKey,
   localKokoroVoiceId,
+  resolveLocalKokoroProfileId,
   type LocalKokoroInstallState,
+  type LocalKokoroModelProfileId,
   type LocalKokoroProgress,
   type TtsEngine,
 } from "@/lib/local-kokoro-config";
 
 export {
+  getLocalKokoroModelProfile,
   localKokoroDownloadDescription,
+  localKokoroCacheVersion,
+  localKokoroDefaultProfileId,
   localKokoroDtype,
+  localKokoroModelProfiles,
   localKokoroModelId,
+  localKokoroProfileStorageKey,
   localKokoroStorageKey,
   localKokoroVoiceId,
+  resolveLocalKokoroProfileId,
   type LocalKokoroInstallState,
+  type LocalKokoroModelProfile,
+  type LocalKokoroModelProfileId,
   type LocalKokoroProgress,
   type TtsEngine,
 } from "@/lib/local-kokoro-config";
 
 type LocalKokoroWorkerRequest =
-  | { id: number; type: "install" | "warm" }
-  | { id: number; type: "synthesize"; text: string; voice: string }
+  | { id: number; type: "install" | "warm"; profileId: LocalKokoroModelProfileId; voice?: string }
+  | { id: number; type: "synthesize"; profileId: LocalKokoroModelProfileId; text: string; voice: string }
   | { id: number; type: "cancel" };
 
 type LocalKokoroWorkerRequestInput =
-  | { type: "install" | "warm" }
-  | { type: "synthesize"; text: string; voice: string };
+  | { type: "install" | "warm"; profileId: LocalKokoroModelProfileId; voice?: string }
+  | { type: "synthesize"; profileId: LocalKokoroModelProfileId; text: string; voice: string };
 
 type LocalKokoroWorkerResponse =
   | { id: number; type: "progress"; progress: LocalKokoroProgress }
@@ -51,12 +65,14 @@ export function normalizeTtsEngine(value: unknown): TtsEngine {
   return value === "local" || value === "server" || value === "auto" ? value : "auto";
 }
 
-export function isLocalKokoroReady(state: LocalKokoroInstallState): boolean {
+export function isLocalKokoroReady(state: LocalKokoroInstallState, profileId: LocalKokoroModelProfileId = localKokoroDefaultProfileId): boolean {
+  const profile = getLocalKokoroModelProfile(profileId);
+  const normalizedProfileId = getStateProfileId(state);
   return (
-    state.status === "ready" &&
-    state.modelId === localKokoroModelId &&
-    state.voice === localKokoroVoiceId &&
-    state.dtype === localKokoroDtype
+    isKnownLocalKokoroReady(state) &&
+    normalizedProfileId === profile.id &&
+    state.dtype === profile.dtype &&
+    (state.modelFile === profile.modelFile || (profile.id === "balanced" && !state.modelFile))
   );
 }
 
@@ -69,7 +85,7 @@ export function shouldUseLocalKokoro(engine: TtsEngine, state: LocalKokoroInstal
     return false;
   }
 
-  return isLocalKokoroReady(state);
+  return isKnownLocalKokoroReady(state);
 }
 
 export function supportsLocalKokoroRuntime(): boolean {
@@ -83,6 +99,9 @@ export function supportsLocalKokoroRuntime(): boolean {
     typeof workerCapableWindow.Worker === "function" &&
     typeof window.indexedDB !== "undefined" &&
     typeof window.fetch === "function" &&
+    typeof caches !== "undefined" &&
+    typeof caches.open === "function" &&
+    typeof ReadableStream !== "undefined" &&
     typeof Blob !== "undefined" &&
     typeof Response !== "undefined"
   );
@@ -95,7 +114,7 @@ export function getLocalKokoroInstallState(): LocalKokoroInstallState {
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem(localKokoroStorageKey) ?? "{}") as LocalKokoroInstallState;
-    return isLocalKokoroReady(parsed) ? parsed : { status: "not-installed" };
+    return isKnownLocalKokoroReady(parsed) ? normalizeLocalKokoroInstallState(parsed) : { status: "not-installed" };
   } catch {
     return { status: "not-installed" };
   }
@@ -110,30 +129,61 @@ export function saveLocalKokoroInstallState(state: LocalKokoroInstallState) {
   window.dispatchEvent(new CustomEvent("chapterchase:local-kokoro-tts"));
 }
 
-export async function installLocalKokoroModel(options: { onProgress?: (progress: LocalKokoroProgress) => void; signal?: AbortSignal } = {}) {
-  options.onProgress?.({ message: "Preparing on-device Kokoro..." });
-  await sendLocalKokoroWorkerRequest<void>({ type: "install" }, options);
+export function getPreferredLocalKokoroProfileId(): LocalKokoroModelProfileId {
+  if (typeof window === "undefined") {
+    return localKokoroDefaultProfileId;
+  }
+
+  const storedProfile = window.localStorage.getItem(localKokoroProfileStorageKey);
+  if (storedProfile === "balanced" || storedProfile === "full") {
+    return storedProfile;
+  }
+
+  return getStateProfileId(getLocalKokoroInstallState());
+}
+
+export function savePreferredLocalKokoroProfileId(profileId: LocalKokoroModelProfileId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(localKokoroProfileStorageKey, profileId);
+  window.dispatchEvent(new CustomEvent("chapterchase:local-kokoro-tts"));
+}
+
+export async function installLocalKokoroModel(
+  options: { onProgress?: (progress: LocalKokoroProgress) => void; signal?: AbortSignal; voiceId?: string; profileId?: LocalKokoroModelProfileId } = {}
+) {
+  const profile = getLocalKokoroModelProfile(options.profileId ?? getPreferredLocalKokoroProfileId());
+  const voice = resolveLocalKokoroVoiceName(options.voiceId ?? localKokoroVoiceId);
+  options.onProgress?.({ message: "Preparing on-device speech..." });
+  await sendLocalKokoroWorkerRequest<void>({ type: "install", profileId: profile.id, voice }, options);
 
   const state: LocalKokoroInstallState = {
     status: "ready",
     installedAt: new Date().toISOString(),
     modelId: localKokoroModelId,
-    voice: localKokoroVoiceId,
-    dtype: localKokoroDtype,
+    profileId: profile.id,
+    voice,
+    dtype: profile.dtype,
+    modelFile: profile.modelFile,
+    cacheVersion: localKokoroCacheVersion,
   };
+  savePreferredLocalKokoroProfileId(profile.id);
   saveLocalKokoroInstallState(state);
-  options.onProgress?.({ message: "On-device Kokoro is ready." });
+  options.onProgress?.({ message: "On-device speech is ready." });
   return state;
 }
 
 export async function warmLocalKokoroTts(signal?: AbortSignal) {
-  await sendLocalKokoroWorkerRequest<void>({ type: "warm" }, { signal });
+  await sendLocalKokoroWorkerRequest<void>({ type: "warm", profileId: getRuntimeLocalKokoroProfileId() }, { signal });
 }
 
 export function synthesizeLocalKokoroBlob(text: string, voiceId: string, signal?: AbortSignal): Promise<Blob> {
   return sendLocalKokoroWorkerRequest<Blob>(
     {
       type: "synthesize",
+      profileId: getRuntimeLocalKokoroProfileId(),
       text,
       voice: resolveLocalKokoroVoiceName(voiceId),
     },
@@ -146,12 +196,49 @@ function resolveLocalKokoroVoiceName(voiceId: string) {
   return Number.isInteger(numericVoiceId) ? getKokoroVoiceName(numericVoiceId) : voiceId || localKokoroVoiceId;
 }
 
+function getRuntimeLocalKokoroProfileId() {
+  const state = getLocalKokoroInstallState();
+  if (isKnownLocalKokoroReady(state)) {
+    return getStateProfileId(state);
+  }
+
+  return getPreferredLocalKokoroProfileId();
+}
+
+function isKnownLocalKokoroReady(state: LocalKokoroInstallState): boolean {
+  if (state.status !== "ready" || state.modelId !== localKokoroModelId || state.cacheVersion !== localKokoroCacheVersion) {
+    return false;
+  }
+
+  const profile = getLocalKokoroModelProfile(getStateProfileId(state));
+  return state.dtype === profile.dtype && (state.modelFile === profile.modelFile || (profile.id === "balanced" && !state.modelFile));
+}
+
+function normalizeLocalKokoroInstallState(state: LocalKokoroInstallState): LocalKokoroInstallState {
+  const profile = getLocalKokoroModelProfile(getStateProfileId(state));
+  return {
+    ...state,
+    profileId: profile.id,
+    dtype: profile.dtype,
+    modelFile: profile.modelFile,
+  };
+}
+
+function getStateProfileId(state: LocalKokoroInstallState): LocalKokoroModelProfileId {
+  if (state.profileId) {
+    return resolveLocalKokoroProfileId(state.profileId);
+  }
+
+  const profile = Object.values(localKokoroModelProfiles).find((candidate) => candidate.dtype === state.dtype);
+  return profile?.id ?? localKokoroDefaultProfileId;
+}
+
 function sendLocalKokoroWorkerRequest<T>(
   request: LocalKokoroWorkerRequestInput,
   options: { onProgress?: (progress: LocalKokoroProgress) => void; signal?: AbortSignal } = {}
 ) {
   if (!supportsLocalKokoroRuntime()) {
-    return Promise.reject(new Error("On-device Kokoro is not supported in this browser."));
+    return Promise.reject(new Error("On-device speech is not supported in this browser."));
   }
 
   if (options.signal?.aborted) {
@@ -192,12 +279,12 @@ function getLocalKokoroWorker() {
   });
   localKokoroWorker.onmessage = (event: MessageEvent<LocalKokoroWorkerResponse>) => handleWorkerMessage(event.data);
   localKokoroWorker.onerror = (event) => {
-    rejectAllWorkerRequests(new Error(event.message || "On-device Kokoro worker failed."));
+    rejectAllWorkerRequests(new Error(event.message || "On-device speech worker failed."));
     localKokoroWorker?.terminate();
     localKokoroWorker = null;
   };
   localKokoroWorker.onmessageerror = () => {
-    rejectAllWorkerRequests(new Error("Unable to read on-device Kokoro worker response."));
+    rejectAllWorkerRequests(new Error("Unable to read on-device speech worker response."));
     localKokoroWorker?.terminate();
     localKokoroWorker = null;
   };
@@ -249,5 +336,5 @@ function cleanupPendingWorkerRequest(pending: PendingWorkerRequest<unknown>) {
 }
 
 function createAbortError() {
-  return new DOMException("Local Kokoro request was aborted.", "AbortError");
+  return new DOMException("Local speech request was aborted.", "AbortError");
 }
