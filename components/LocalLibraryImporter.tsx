@@ -1,22 +1,24 @@
 "use client";
 
 import { HardDriveUpload } from "lucide-react";
-import { useRef, useState } from "react";
+import { type ChangeEvent, useId, useState } from "react";
 import { addLocalSourceBook } from "@/lib/local-library";
 
 export function LocalLibraryImporter() {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputId = useId();
   const [status, setStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  async function importFiles(files: FileList | null) {
-    if (!files?.length || isImporting) {
+  async function importFiles(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const selectedFiles = Array.from(input.files ?? []);
+
+    if (!selectedFiles.length || isImporting) {
       return;
     }
 
     setIsImporting(true);
     setStatus(null);
-    const selectedFiles = Array.from(files);
 
     try {
       await Promise.all(selectedFiles.map((file) => addLocalSourceBook(file)));
@@ -25,9 +27,7 @@ export function LocalLibraryImporter() {
       setStatus("Unable to add the selected local book.");
     } finally {
       setIsImporting(false);
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
+      input.value = "";
     }
   }
 
@@ -37,17 +37,18 @@ export function LocalLibraryImporter() {
         <strong>Local Library</strong>
         <span>Store books in this browser only. These files are not sent to the ChapterChase server.</span>
       </div>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".epub,.pdf,.txt,.html,.htm,application/epub+zip,application/pdf,text/plain,text/html"
-        multiple
-        onChange={(event) => void importFiles(event.target.files)}
-      />
-      <button className="secondary-button" onClick={() => inputRef.current?.click()} disabled={isImporting}>
+      <label className="secondary-button local-library-file-button" htmlFor={inputId} aria-disabled={isImporting ? "true" : "false"}>
         <HardDriveUpload size={16} />
-        {isImporting ? "Adding..." : "Add Local Source"}
-      </button>
+        <span>{isImporting ? "Adding..." : "Add Local Source"}</span>
+        <input
+          id={inputId}
+          type="file"
+          accept=".epub,.pdf,application/epub+zip,application/pdf"
+          multiple
+          disabled={isImporting}
+          onChange={(event) => void importFiles(event)}
+        />
+      </label>
       {status ? <p>{status}</p> : null}
     </section>
   );

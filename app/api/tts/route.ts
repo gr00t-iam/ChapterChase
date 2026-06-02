@@ -23,14 +23,14 @@ export async function POST(request: Request) {
   try {
     const resolvedVoice = resolveKokoroVoiceId(body?.voiceId ?? body?.voice ?? user.ttsVoice);
     const normalizedText = text.replace(/\s+/g, " ").trim().slice(0, 12000);
-    const cacheDir = path.join(dataDir, "tts-cache");
+    const cacheDir = path.join(/* turbopackIgnore: true */ dataDir, "tts-cache");
     const cacheKey = crypto
       .createHash("sha256")
       .update(JSON.stringify({ v: 1, voice: resolvedVoice, text: normalizedText }))
       .digest("hex");
-    const cachePath = path.join(cacheDir, `kokoro-${cacheKey}.wav`);
+    const cachePath = path.join(/* turbopackIgnore: true */ cacheDir, `kokoro-${cacheKey}.wav`);
 
-    const cached = await fs.readFile(cachePath).catch(() => null);
+    const cached = await fs.readFile(/* turbopackIgnore: true */ cachePath).catch(() => null);
     const wav = cached ?? (await getOrCreateCachedSpeech(cacheKey, cachePath, normalizedText, resolvedVoice));
     return new Response(new Uint8Array(wav), {
       headers: {
@@ -58,8 +58,8 @@ function getOrCreateCachedSpeech(cacheKey: string, cachePath: string, text: stri
 
   const synthesis = synthesizeWithSherpaKokoro(text, voiceId)
     .then(async (wav) => {
-      await fs.mkdir(path.dirname(cachePath), { recursive: true }).catch(() => undefined);
-      await fs.writeFile(cachePath, new Uint8Array(wav)).catch(() => undefined);
+      await fs.mkdir(/* turbopackIgnore: true */ path.dirname(cachePath), { recursive: true }).catch(() => undefined);
+      await fs.writeFile(/* turbopackIgnore: true */ cachePath, new Uint8Array(wav)).catch(() => undefined);
       return wav;
     })
     .finally(() => pendingSyntheses.delete(cacheKey));

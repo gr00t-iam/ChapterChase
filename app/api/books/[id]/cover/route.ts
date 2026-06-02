@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/api/book
     notFound();
   }
 
-  const data = await fs.readFile(book.coverPath);
+  const data = await fs.readFile(/* turbopackIgnore: true */ book.coverPath);
   return new Response(data, {
     headers: {
       "Content-Type": contentType(book.coverPath),

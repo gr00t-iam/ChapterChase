@@ -19,7 +19,7 @@ export async function addLibraryFolderAction(formData: FormData) {
 
   let stat;
   try {
-    stat = await fs.stat(rootPath);
+    stat = await fs.stat(/* turbopackIgnore: true */ rootPath);
   } catch {
     throw new Error("Library path is not accessible from this ChapterChase server. Confirm the mapped drive or UNC share is connected, then try again.");
   }

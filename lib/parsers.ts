@@ -30,7 +30,7 @@ export async function parseBookFile(filePath: string, bookId: string) {
 }
 
 async function parseEpub(filePath: string, bookId: string): Promise<ParsedBook> {
-  const zip = new AdmZip(filePath);
+  const zip = new AdmZip(/* turbopackIgnore: true */ filePath);
   const container = zip.readAsText("META-INF/container.xml");
   const containerXml = xmlParser.parse(container);
   const opfPath = containerXml?.container?.rootfiles?.rootfile?.["@_full-path"];
@@ -57,10 +57,10 @@ async function parseEpub(filePath: string, bookId: string): Promise<ParsedBook> 
   const description = readXmlValue(metadata["dc:description"]);
   const coverPath = await extractEpubCover(zip, manifestItems, metadata, opfDir, bookId);
   const pages = extractEpubPages(zip, manifestItems, spineItems, opfDir);
-  const cachePath = path.join(cacheDir, `${bookId}.json`);
+  const cachePath = path.join(/* turbopackIgnore: true */ cacheDir, `${bookId}.json`);
 
-  await fs.mkdir(cacheDir, { recursive: true });
-  await fs.writeFile(cachePath, JSON.stringify({ pages }, null, 2), "utf8");
+  await fs.mkdir(/* turbopackIgnore: true */ cacheDir, { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ cachePath, JSON.stringify({ pages }, null, 2), "utf8");
 
   return {
     title,
@@ -78,7 +78,7 @@ async function parseEpub(filePath: string, bookId: string): Promise<ParsedBook> 
 
 async function parsePdf(filePath: string, bookId: string): Promise<ParsedBook> {
   const { PDFParse } = await import("pdf-parse");
-  const buffer = await fs.readFile(filePath);
+  const buffer = await fs.readFile(/* turbopackIgnore: true */ filePath);
   const parser = new PDFParse({ data: buffer });
   const [infoResult, textResult] = await Promise.all([parser.getInfo(), parser.getText()]);
   await parser.destroy();
@@ -86,10 +86,10 @@ async function parsePdf(filePath: string, bookId: string): Promise<ParsedBook> {
   const title = info?.Title;
   const author = info?.Author;
   const pages = paginateText(textResult.text ?? "", 1600);
-  const cachePath = path.join(cacheDir, `${bookId}.json`);
+  const cachePath = path.join(/* turbopackIgnore: true */ cacheDir, `${bookId}.json`);
 
-  await fs.mkdir(cacheDir, { recursive: true });
-  await fs.writeFile(cachePath, JSON.stringify({ pages }, null, 2), "utf8");
+  await fs.mkdir(/* turbopackIgnore: true */ cacheDir, { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ cachePath, JSON.stringify({ pages }, null, 2), "utf8");
 
   return {
     title,
@@ -124,9 +124,9 @@ async function extractEpubCover(
   }
 
   const extension = path.extname(entryPath) || ".jpg";
-  const coverPath = path.join(coversDir, `${bookId}${extension}`);
-  await fs.mkdir(coversDir, { recursive: true });
-  await fs.writeFile(coverPath, entry.getData());
+  const coverPath = path.join(/* turbopackIgnore: true */ coversDir, `${bookId}${extension}`);
+  await fs.mkdir(/* turbopackIgnore: true */ coversDir, { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ coverPath, entry.getData());
   return coverPath;
 }
 

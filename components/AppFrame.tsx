@@ -26,23 +26,16 @@ type ShellUser = {
 };
 
 export function AppFrame({ user, isAdmin, children }: { user: ShellUser; isAdmin: boolean; children: React.ReactNode }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [preview, setPreview] = useState<BookPreviewDetail | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-    function showPreview(event: Event) {
-      setPreview((event as CustomEvent<BookPreviewDetail>).detail);
-    }
-
-    function clearPreview() {
-      setPreview(null);
-    }
-
-    window.addEventListener(bookPreviewEvent, showPreview);
-    window.addEventListener(bookPreviewClearEvent, clearPreview);
+    const desktopSidebar = window.matchMedia("(min-width: 1024px)");
+    const syncDesktopSidebar = () => setIsSidebarOpen(desktopSidebar.matches);
+    const frame = window.requestAnimationFrame(syncDesktopSidebar);
+    desktopSidebar.addEventListener("change", syncDesktopSidebar);
     return () => {
-      window.removeEventListener(bookPreviewEvent, showPreview);
-      window.removeEventListener(bookPreviewClearEvent, clearPreview);
+      window.cancelAnimationFrame(frame);
+      desktopSidebar.removeEventListener("change", syncDesktopSidebar);
     };
   }, []);
 
@@ -85,7 +78,6 @@ export function AppFrame({ user, isAdmin, children }: { user: ShellUser; isAdmin
       <aside className="app-sidebar fixed bottom-0 left-0 top-11 w-56 border-r border-black bg-[#121413] pt-3">
         <AppNav isAdmin={isAdmin} />
         <div className="sidebar-preview-zone">
-          <BookPreviewCard preview={preview} />
           <div className="mt-4 text-sm text-zinc-400">
             <p className="truncate text-zinc-200">{user.name}</p>
             <p className="truncate">{user.email}</p>
@@ -108,29 +100,5 @@ export function AppFrame({ user, isAdmin, children }: { user: ShellUser; isAdmin
         {children}
       </div>
     </div>
-  );
-}
-
-function BookPreviewCard({ preview }: { preview: BookPreviewDetail | null }) {
-  return (
-    <section className="sidebar-book-preview" aria-label="Book Preview">
-      <h2>Book Preview</h2>
-      {preview ? (
-        <div className="sidebar-book-preview-content">
-          {preview.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview.coverUrl} alt="" />
-          ) : (
-            <div className="sidebar-book-preview-cover-fallback">CC</div>
-          )}
-          <div>
-            <strong>{preview.title}</strong>
-            <span>{preview.author ?? "Unknown author"}</span>
-          </div>
-        </div>
-      ) : (
-        <p className="sidebar-book-preview-idle">Hover over a book to view details...</p>
-      )}
-    </section>
   );
 }

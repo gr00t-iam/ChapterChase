@@ -14,7 +14,7 @@ export async function readReaderCache(cachePath: string | null) {
   }
 
   try {
-    const raw = await fs.readFile(cachePath, "utf8");
+    const raw = await fs.readFile(/* turbopackIgnore: true */ cachePath, "utf8");
     const parsed = JSON.parse(raw) as ReaderCache;
     return { pages: parsed.pages?.filter((page) => page.text.trim()) ?? [] };
   } catch {

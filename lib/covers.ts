@@ -35,9 +35,9 @@ export async function downloadCoverImageWithDiagnostics(coverUrl: string | undef
     }
 
     const extension = extensionForContentType(contentType) ?? extensionFromUrl(coverUrl) ?? ".jpg";
-    const coverPath = path.join(coversDir, `${bookId}-remote${extension}`);
-    await fs.mkdir(coversDir, { recursive: true });
-    await fs.writeFile(coverPath, bytes);
+    const coverPath = path.join(/* turbopackIgnore: true */ coversDir, `${bookId}-remote${extension}`);
+    await fs.mkdir(/* turbopackIgnore: true */ coversDir, { recursive: true });
+    await fs.writeFile(/* turbopackIgnore: true */ coverPath, bytes);
     return { coverPath };
   } catch {
     return { error: "Unable to download cover image." };
@@ -46,9 +46,9 @@ export async function downloadCoverImageWithDiagnostics(coverUrl: string | undef
 
 export async function saveCoverBytes(bookId: string, bytes: Buffer, contentType: string) {
   const extension = extensionForContentType(contentType) ?? ".jpg";
-  const coverPath = path.join(coversDir, `${bookId}-custom${extension}`);
-  await fs.mkdir(coversDir, { recursive: true });
-  await fs.writeFile(coverPath, bytes);
+  const coverPath = path.join(/* turbopackIgnore: true */ coversDir, `${bookId}-custom${extension}`);
+  await fs.mkdir(/* turbopackIgnore: true */ coversDir, { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ coverPath, bytes);
   return coverPath;
 }
 

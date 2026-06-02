@@ -105,10 +105,10 @@ async function getOfflineTts() {
     const tts = new OfflineTtsCtor({
       model: {
         kokoro: {
-          model: toSherpaModelPath(path.join(modelDir, "model.onnx")),
-          voices: toSherpaModelPath(path.join(modelDir, "voices.bin")),
-          tokens: toSherpaModelPath(path.join(modelDir, "tokens.txt")),
-          dataDir: toSherpaModelPath(path.join(modelDir, "espeak-ng-data")),
+          model: toSherpaModelPath(path.join(/* turbopackIgnore: true */ modelDir, "model.onnx")),
+          voices: toSherpaModelPath(path.join(/* turbopackIgnore: true */ modelDir, "voices.bin")),
+          tokens: toSherpaModelPath(path.join(/* turbopackIgnore: true */ modelDir, "tokens.txt")),
+          dataDir: toSherpaModelPath(path.join(/* turbopackIgnore: true */ modelDir, "espeak-ng-data")),
           lengthScale: getNumberEnv("CHAPTERCHASE_TTS_LENGTH_SCALE", 1),
         },
       },
@@ -168,13 +168,13 @@ function getSherpaNativeAddonFailureDetails(): string {
 
     const require = createRequire(import.meta.url);
     const possiblePaths = [
-      path.join(process.cwd(), "node_modules", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
+      path.join(/* turbopackIgnore: true */ process.cwd(), "node_modules", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
       // Next.js standalone output sometimes changes cwd; fall back to this file's directory.
-      path.join(path.dirname(require.resolve("sherpa-onnx-node")), "..", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
+      path.join(/* turbopackIgnore: true */ path.dirname(require.resolve("sherpa-onnx-node")), "..", `sherpa-onnx-${platformArch}`, "sherpa-onnx.node"),
     ];
 
     for (const p of possiblePaths) {
-      if (!fs.existsSync(p)) continue;
+      if (!fs.existsSync(/* turbopackIgnore: true */ p)) continue;
       try {
         // Avoid dynamic native loads here; Turbopack will attempt to trace variable requires.
         // The presence of the file is still useful, and the caller will include the original error message.
@@ -195,14 +195,14 @@ function getSherpaNativeAddonFailureDetails(): string {
 function getKokoroModelDir() {
   const explicitDir = process.env.CHAPTERCHASE_TTS_MODEL_DIR?.trim();
   if (explicitDir) {
-    return path.isAbsolute(explicitDir) ? explicitDir : path.join(/*turbopackIgnore: true*/ process.cwd(), explicitDir);
+    return path.isAbsolute(explicitDir) ? explicitDir : path.join(/* turbopackIgnore: true */ process.cwd(), explicitDir);
   }
 
-  return path.join(dataDir, "tts", "kokoro-en-v0_19");
+  return path.join(/* turbopackIgnore: true */ dataDir, "tts", "kokoro-en-v0_19");
 }
 
 function validateKokoroModelDir(modelDir: string) {
-  const missing = requiredModelEntries.filter((entry) => !fs.existsSync(path.join(modelDir, entry)));
+  const missing = requiredModelEntries.filter((entry) => !fs.existsSync(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ modelDir, entry)));
   if (missing.length) {
     throw new SherpaTtsSetupError(
       `Kokoro TTS model files are missing from ${modelDir}. Missing: ${missing.join(", ")}.`

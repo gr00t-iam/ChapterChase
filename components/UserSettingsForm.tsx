@@ -1,9 +1,9 @@
 "use client";
 
-import { CheckCircle2, Download, Loader2, Plus, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Download, Loader2, Plus, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { createClientId } from "@/lib/client-id";
 import { defaultKokoroVoiceId, getKokoroVoiceName, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import {
   getLocalKokoroModelProfile,
@@ -11,6 +11,7 @@ import {
   getPreferredLocalKokoroProfileId,
   installLocalKokoroModel,
   isLocalKokoroReady,
+  localKokoroDefaultProfileId,
   localKokoroModelProfiles,
   normalizeTtsEngine,
   resolveLocalKokoroProfileId,
@@ -37,14 +38,25 @@ type SettingsUser = {
   ttsVoice: string;
   uiLayout: string;
   defaultReadingMode: string;
-  blurUnreadSummaries: boolean;
   disableAnimations: boolean;
-  collapseSeriesRelationships: boolean;
   annotationHighlightColors: string;
   shareProfile: boolean;
   shareSeriesReviews: boolean;
   viewSharedAnnotations: boolean;
   readingProfiles: string;
+};
+
+type HighlightedAnnotation = {
+  id: string;
+  quote: string;
+  note: string | null;
+  color: string;
+  locator: string | null;
+  book: {
+    id: string;
+    title: string;
+    author: string | null;
+  };
 };
 
 const defaultColors = ["#facc15", "#38bdf8", "#fb7185", "#4ade80"];
@@ -57,31 +69,28 @@ const defaultProfiles: ReadingProfile[] = [
   { id: "deepsea", name: "Deep Sea", theme: "deepsea", fontScale: 1, lineHeight: 1.62 },
 ];
 
-const defaultProfileIds = new Set(defaultProfiles.map((profile) => profile.id));
-
 export function UserSettingsForm({ user }: { user: SettingsUser }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = normalizeSettingsSection(searchParams.get("section"));
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<string | null>(null);
-  const [initialLocalSettings] = useState(loadLocalUserSettings);
   const [form, setForm] = useState(() => ({
     ...user,
     ttsVoice: String(resolveKokoroVoiceId(user.ttsVoice)),
     annotationHighlightColors: parseColors(user.annotationHighlightColors),
     readingProfiles: parseProfiles(user.readingProfiles),
   }));
-  const [bionicReading, setBionicReading] = useState(initialLocalSettings.bionicReading);
-  const [ttsEngine, setTtsEngine] = useState<TtsEngine>(initialLocalSettings.ttsEngine);
-  const [localKokoroProfileId, setLocalKokoroProfileId] = useState<LocalKokoroModelProfileId>(() =>
-    typeof window === "undefined" ? "balanced" : getPreferredLocalKokoroProfileId()
-  );
-  const [localKokoroState, setLocalKokoroState] = useState<LocalKokoroInstallState>(() =>
-    typeof window === "undefined" ? { status: "not-installed" } : getLocalKokoroInstallState()
-  );
+  const [localSettingsReady, setLocalSettingsReady] = useState(false);
+  const [bionicReading, setBionicReading] = useState(false);
+  const [ttsEngine, setTtsEngine] = useState<TtsEngine>("auto");
+  const [localKokoroProfileId, setLocalKokoroProfileId] = useState<LocalKokoroModelProfileId>(localKokoroDefaultProfileId);
+  const [localKokoroState, setLocalKokoroState] = useState<LocalKokoroInstallState>({ status: "not-installed" });
   const [localKokoroProgress, setLocalKokoroProgress] = useState<string | null>(null);
   const [isInstallingLocalKokoro, setIsInstallingLocalKokoro] = useState(false);
+  const [highlightedAnnotations, setHighlightedAnnotations] = useState<HighlightedAnnotation[]>([]);
+  const [highlightedWordsStatus, setHighlightedWordsStatus] = useState<string | null>(null);
+  const selectedReaderTheme = resolveReaderTheme(form.readerTheme);
   const selectedLocalKokoroProfile = getLocalKokoroModelProfile(localKokoroProfileId);
   const selectedVoiceName = getKokoroVoiceName(resolveKokoroVoiceId(form.ttsVoice));
   const localKokoroReady = isLocalKokoroReady(localKokoroState, localKokoroProfileId);
@@ -120,51 +129,11 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
     }));
   }
 
-  function addProfile(theme: ReadingProfile["theme"]) {
-    setForm((current) => ({
-      ...current,
-      readingProfiles: [
-        ...current.readingProfiles,
-        { id: createClientId("reading-profile"), name: `${themeLabel(theme)} Profile`, theme, fontScale: 1, lineHeight: 1.6 },
-      ],
-    }));
-  }
-
-  function updateProfile(id: string, patch: Partial<ReadingProfile>) {
-    setForm((current) => ({
-      ...current,
-      readingProfiles: current.readingProfiles.map((profile) => (profile.id === id ? { ...profile, ...patch } : profile)),
-    }));
-  }
-
-  function deleteProfile(profile: ReadingProfile) {
-    if (isFactoryProfile(profile)) {
-      return;
-    }
-
-    if (!window.confirm(`Delete the "${profile.name}" reading profile?`)) {
-      return;
-    }
-
-    setForm((current) => ({
-      ...current,
-      readingProfiles: current.readingProfiles.filter((candidate) => candidate.id !== profile.id),
-    }));
-  }
-
-  function resetProfiles() {
-    if (!window.confirm("Reset all reading profiles to the ChapterChase defaults? This will remove custom profiles.")) {
-      return;
-    }
-
-    setForm((current) => ({
-      ...current,
-      readingProfiles: cloneDefaultProfiles(),
-      readerTheme: "paper",
-    }));
-  }
-
   useEffect(() => {
+    if (!localSettingsReady) {
+      return;
+    }
+
     saveLocalUserSettings({
       activeReadingProfile: form.readerTheme,
       ttsVoice: form.ttsVoice,
@@ -172,15 +141,52 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
       bionicReading,
       readingProfiles: form.readingProfiles,
     });
-  }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice, ttsEngine]);
+  }, [bionicReading, form.readerTheme, form.readingProfiles, form.ttsVoice, localSettingsReady, ttsEngine]);
 
   useEffect(() => {
+    if (activeTab !== "Social" || highlightedAnnotations.length) {
+      return;
+    }
+
+    let cancelled = false;
+    fetch("/api/annotations")
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Unable to load highlighted words"))))
+      .then((data: { annotations?: HighlightedAnnotation[] }) => {
+        if (!cancelled) {
+          setHighlightedAnnotations(Array.isArray(data.annotations) ? data.annotations : []);
+          setHighlightedWordsStatus(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHighlightedWordsStatus("Unable to load highlighted words.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, highlightedAnnotations.length]);
+
+  useEffect(() => {
+    const refreshLocalUserSettings = () => {
+      const localSettings = loadLocalUserSettings();
+      setBionicReading(localSettings.bionicReading);
+      setTtsEngine(localSettings.ttsEngine);
+      setLocalSettingsReady(true);
+    };
     const refreshLocalKokoroState = () => {
       setLocalKokoroState(getLocalKokoroInstallState());
       setLocalKokoroProfileId(getPreferredLocalKokoroProfileId());
     };
+    refreshLocalUserSettings();
+    refreshLocalKokoroState();
+    window.addEventListener("chapterchase:user-settings", refreshLocalUserSettings);
     window.addEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
-    return () => window.removeEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
+    return () => {
+      window.removeEventListener("chapterchase:user-settings", refreshLocalUserSettings);
+      window.removeEventListener("chapterchase:local-kokoro-tts", refreshLocalKokoroState);
+    };
   }, []);
 
   async function save() {
@@ -340,13 +346,7 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
                   {localKokoroProgress ? <p className="local-tts-status">{localKokoroProgress}</p> : null}
                 </div>
               </div>
-              <Toggle label="Blur Unread Summaries" checked={form.blurUnreadSummaries} onChange={(value) => update("blurUnreadSummaries", value)} />
               <Toggle label="Disable Animations" checked={form.disableAnimations} onChange={(value) => update("disableAnimations", value)} />
-              <Toggle
-                label="Collapse Series Relationships"
-                checked={form.collapseSeriesRelationships}
-                onChange={(value) => update("collapseSeriesRelationships", value)}
-              />
             </div>
             <div className="settings-danger-zone">
               <div>
@@ -365,55 +365,23 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
             <h2>Reading Profiles</h2>
             <label className="settings-field">
               <span>Default reader theme</span>
-              <select value={form.readerTheme} onChange={(event) => update("readerTheme", event.target.value)}>
-                <option value="paper">Paper</option>
-                <option value="night">Night</option>
-                <option value="scroll">Ancient scroll</option>
-                <option value="deepsea">Deep Sea</option>
-                <option value="eink">E-Ink</option>
-                <option value="reseda">Reseda</option>
+              <select value={selectedReaderTheme} onChange={(event) => update("readerTheme", event.target.value)}>
+                {defaultProfiles.map((profile) => (
+                  <option key={profile.theme} value={profile.theme}>
+                    {themeLabel(profile.theme)}
+                  </option>
+                ))}
               </select>
             </label>
             <Toggle label="Bionic Reading" checked={bionicReading} onChange={setBionicReading} />
-            <div className="profile-list">
-              {form.readingProfiles.map((profile) => {
-                const factoryProfile = isFactoryProfile(profile);
-                return (
-                  <article className="profile-card" key={profile.id} data-reader-theme={profile.theme}>
-                    {factoryProfile ? (
-                      <span className="profile-default-badge">Default</span>
-                    ) : (
-                      <button className="profile-delete-button" aria-label={`Delete ${profile.name}`} onClick={() => deleteProfile(profile)}>
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                    <input value={profile.name} onChange={(event) => updateProfile(profile.id, { name: event.target.value })} />
-                    <select value={profile.theme} onChange={(event) => updateProfile(profile.id, { theme: event.target.value as ReadingProfile["theme"] })}>
-                      <option value="paper">Paper</option>
-                      <option value="night">Night</option>
-                      <option value="scroll">Ancient scroll</option>
-                      <option value="deepsea">Deep Sea</option>
-                      <option value="eink">E-Ink</option>
-                      <option value="reseda">Reseda</option>
-                    </select>
-                  </article>
-                );
-              })}
-            </div>
-            <div className="settings-actions">
-              <button className="secondary-button" onClick={() => addProfile("night")}>
-                <Plus size={16} /> Add Night Profile
-              </button>
-              <button className="secondary-button" onClick={() => addProfile("scroll")}>
-                <Plus size={16} /> Add Scroll Profile
-              </button>
-              <button className="secondary-button" onClick={() => addProfile("eink")}>
-                <Plus size={16} /> Add E-Ink Profile
-              </button>
-              <button className="secondary-button" onClick={() => addProfile("reseda")}>
-                <Plus size={16} /> Add Reseda Profile
-              </button>
-            </div>
+            <article className="reader-theme-preview profile-card" data-reader-theme={selectedReaderTheme} aria-live="polite">
+              <div className="reader-theme-preview-page">
+                <strong>{themeLabel(selectedReaderTheme)}</strong>
+                <p>
+                  The next chapter opened with a quiet page, a steady margin, and enough contrast for the words to settle clearly into place.
+                </p>
+              </div>
+            </article>
           </div>
         ) : null}
 
@@ -449,21 +417,24 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
 
         {activeTab === "Social" ? (
           <div className="settings-section">
-            <h2>Social</h2>
-            <div className="settings-grid">
-              <Toggle label="Share Profile" checked={form.shareProfile} onChange={(value) => update("shareProfile", value)} />
-              <Toggle label="Share Series Reviews" checked={form.shareSeriesReviews} onChange={(value) => update("shareSeriesReviews", value)} />
-              <Toggle label="View Shared Annotations" checked={form.viewSharedAnnotations} onChange={(value) => update("viewSharedAnnotations", value)} />
+            <h2>Highlighted words</h2>
+            <div className="highlighted-words-list">
+              {highlightedAnnotations.map((annotation) => (
+                <Link key={annotation.id} className="highlighted-word-row" href={`/reader/${annotation.book.id}${getAnnotationReaderQuery(annotation.locator)}`}>
+                  <span style={{ borderColor: annotation.color }}>{formatHighlightedQuote(annotation.quote)}</span>
+                  <small>
+                    {annotation.book.title}
+                    {annotation.book.author ? ` by ${annotation.book.author}` : ""}
+                  </small>
+                </Link>
+              ))}
+              {!highlightedAnnotations.length && !highlightedWordsStatus ? <p>No highlighted words yet.</p> : null}
+              {highlightedWordsStatus ? <p>{highlightedWordsStatus}</p> : null}
             </div>
           </div>
         ) : null}
 
         <div className="settings-actions">
-          {activeTab === "Reading Profiles" ? (
-            <button className="secondary-button" onClick={resetProfiles}>
-              Reset All to Default
-            </button>
-          ) : null}
           <button className="kavita-save-button" onClick={save} disabled={isPending}>
             Save Preferences
           </button>
@@ -505,8 +476,8 @@ function cloneDefaultProfiles() {
   return defaultProfiles.map((profile) => ({ ...profile }));
 }
 
-function isFactoryProfile(profile: ReadingProfile) {
-  return defaultProfileIds.has(profile.id);
+function resolveReaderTheme(value: string): ReadingProfile["theme"] {
+  return defaultProfiles.find((profile) => profile.theme === value)?.theme ?? "paper";
 }
 
 function loadLocalUserSettings() {
@@ -533,6 +504,24 @@ function saveLocalUserSettings(settings: { activeReadingProfile: string; ttsVoic
 
   window.localStorage.setItem("userSettings", JSON.stringify(settings));
   window.dispatchEvent(new CustomEvent("chapterchase:user-settings"));
+}
+
+function formatHighlightedQuote(value: string) {
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+}
+
+function getAnnotationReaderQuery(locator: string | null) {
+  if (!locator) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(locator) as { pageIndex?: unknown };
+    return typeof parsed.pageIndex === "number" && Number.isFinite(parsed.pageIndex) ? `?page=${Math.max(0, parsed.pageIndex)}` : "";
+  } catch {
+    return "";
+  }
 }
 
 function themeLabel(theme: ReadingProfile["theme"]) {

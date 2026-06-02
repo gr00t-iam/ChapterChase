@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/api/book
     notFound();
   }
 
-  const data = await fs.readFile(book.filePath);
+  const data = await fs.readFile(/* turbopackIgnore: true */ book.filePath);
   const fileName = path.basename(book.filePath);
   return new Response(data, {
     headers: {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Folder, FolderOpen, HardDrive, Plus, RotateCw, X } from "lucide-react";
 import { addLibraryFolderAction } from "@/app/admin/libraries/actions";
 import { MetadataDownloaderCard } from "@/components/MetadataDownloaderCard";
@@ -13,15 +14,28 @@ type FolderListing = {
   error?: string;
 };
 
-type FolderEditorTab = "general" | "folder" | "cover" | "advanced" | "tasks";
+type CoverBookOption = {
+  id: string;
+  title: string;
+  author: string | null;
+  coverPath: string | null;
+  coverVersion: number;
+};
 
-export function MediaFolderEditor() {
+type FolderEditorTab = "general" | "folder" | "cover" | "tasks";
+
+export function MediaFolderEditor({ books = [] }: { books?: CoverBookOption[] }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<FolderEditorTab>("folder");
   const [libraryName, setLibraryName] = useState("Books");
   const [selectedPath, setSelectedPath] = useState("");
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   const [listing, setListing] = useState<FolderListing | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [coverBookId, setCoverBookId] = useState(books[0]?.id ?? "");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverStatus, setCoverStatus] = useState<string | null>(null);
+  const [isSavingCover, setIsSavingCover] = useState(false);
 
   async function loadFolder(path?: string | null) {
     if (path !== undefined && path !== null) {
@@ -46,6 +60,34 @@ export function MediaFolderEditor() {
     }
     return listing.currentPath ? listing.directories : listing.roots;
   }, [listing]);
+  const selectedCoverBook = useMemo(() => books.find((book) => book.id === coverBookId) ?? books[0], [books, coverBookId]);
+
+  async function saveCoverImage() {
+    if (!selectedCoverBook || !coverFile || isSavingCover) {
+      return;
+    }
+
+    if (coverFile.type && !coverFile.type.startsWith("image/")) {
+      setCoverStatus("Choose an image file for the book cover.");
+      return;
+    }
+
+    setIsSavingCover(true);
+    setCoverStatus(null);
+    const formData = new FormData();
+    formData.set("file", coverFile);
+    const response = await fetch(`/api/books/${selectedCoverBook.id}/cover`, { method: "POST", body: formData });
+    setIsSavingCover(false);
+
+    if (!response.ok) {
+      setCoverStatus("Unable to save cover image.");
+      return;
+    }
+
+    setCoverFile(null);
+    setCoverStatus(`Cover image updated for ${selectedCoverBook.title}.`);
+    router.refresh();
+  }
 
   return (
     <>
@@ -60,16 +102,13 @@ export function MediaFolderEditor() {
           <button className={activeTab === "cover" ? "active" : ""} onClick={() => setActiveTab("cover")}>
             Cover Image
           </button>
-          <button className={activeTab === "advanced" ? "active" : ""} onClick={() => setActiveTab("advanced")}>
-            Advanced
-          </button>
           <button className={activeTab === "tasks" ? "active" : ""} onClick={() => setActiveTab("tasks")}>
             Tasks
           </button>
         </aside>
         <section className="kavita-editor-panel">
           <p className="text-sm font-semibold text-zinc-200">
-            {activeTab === "folder" ? "Add folders to your library" : "Library folder settings"}
+            {activeTab === "folder" ? "Add folders to your library" : activeTab === "cover" ? "Update book cover image" : "Library folder settings"}
           </p>
           <form action={addLibraryFolderAction} className="mt-5 space-y-4">
             {activeTab === "general" || activeTab === "folder" ? (
@@ -119,22 +158,71 @@ export function MediaFolderEditor() {
                 </p>
               </>
             ) : null}
-            {activeTab === "cover" ? <p className="text-sm text-zinc-300">Folder cover image settings are handled per book in v1.</p> : null}
-            {activeTab === "advanced" ? <p className="text-sm text-zinc-300">Advanced scan settings will apply when scheduled scans are enabled.</p> : null}
+            {activeTab === "cover" ? (
+              <div className="cover-image-manager">
+                {books.length ? (
+                  <>
+                    <label className="grid gap-2 text-sm text-zinc-400">
+                      Choose a book
+                      <select className="kavita-input" value={selectedCoverBook?.id ?? ""} onChange={(event) => setCoverBookId(event.target.value)}>
+                        {books.map((book) => (
+                          <option key={book.id} value={book.id}>
+                            {book.title}
+                            {book.author ? ` by ${book.author}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="cover-image-preview-panel">
+                      {selectedCoverBook?.coverPath ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={`/api/books/${selectedCoverBook.id}/cover?v=${selectedCoverBook.coverVersion}`} alt="" />
+                      ) : (
+                        <span>No cover image</span>
+                      )}
+                      <div>
+                        <strong>{selectedCoverBook?.title}</strong>
+                        <p>{selectedCoverBook?.author ?? "Unknown author"}</p>
+                      </div>
+                    </div>
+                    <label className="grid gap-2 text-sm text-zinc-400">
+                      Upload custom cover image
+                      <input
+                        className="kavita-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/*"
+                        onChange={(event) => setCoverFile(event.currentTarget.files?.[0] ?? null)}
+                      />
+                    </label>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/20 pt-4">
+                      <p className="text-sm text-zinc-400">Covers are copied into ChapterChase app data. Your book files are not modified.</p>
+                      <button type="button" className="kavita-save-button" disabled={!coverFile || !selectedCoverBook || isSavingCover} onClick={saveCoverImage}>
+                        {isSavingCover ? "Saving..." : "Save Cover Image"}
+                      </button>
+                    </div>
+                    {coverStatus ? <p className="text-sm text-sky-200">{coverStatus}</p> : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-zinc-300">No books are available for cover image updates yet.</p>
+                )}
+              </div>
+            ) : null}
             {activeTab === "tasks" ? (
               <div className="grid gap-4">
                 <p className="text-sm text-zinc-300">Use Force Scan on an existing folder below to refresh this library.</p>
                 <MetadataDownloaderCard />
               </div>
             ) : null}
-            <div className="flex justify-end gap-2 border-t border-white/20 pt-4">
-              <button type="reset" className="kavita-light-button" onClick={() => setSelectedPath("")}>
-                Reset
-              </button>
-              <button className="kavita-save-button" disabled={!selectedPath || !libraryName}>
-                Save
-              </button>
-            </div>
+            {activeTab === "general" || activeTab === "folder" ? (
+              <div className="flex justify-end gap-2 border-t border-white/20 pt-4">
+                <button type="reset" className="kavita-light-button" onClick={() => setSelectedPath("")}>
+                  Reset
+                </button>
+                <button className="kavita-save-button" disabled={!selectedPath || !libraryName}>
+                  Save
+                </button>
+              </div>
+            ) : null}
           </form>
         </section>
       </div>

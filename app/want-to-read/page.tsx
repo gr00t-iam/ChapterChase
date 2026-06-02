@@ -1,8 +1,9 @@
 import Link from "next/link";
 import LibraryGrid from "@/components/LibraryGrid";
 import { AppShell } from "@/components/AppShell";
+import { ReadingSuggestionsCarousel } from "@/components/ReadingSuggestionsCarousel";
 import { hasUsers, requireUser } from "@/lib/auth";
-import { getLibraryBooks } from "@/lib/library-query";
+import { getReadingSuggestions, getWantToReadPageBooks } from "@/lib/want-to-read";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,10 @@ export default async function WantToReadPage({
   const user = await requireUser();
   const { q } = await searchParams;
   const query = q?.trim();
-  const books = await getLibraryBooks({ query, userId: user.id, wantToReadOnly: true });
+  const [books, suggestions] = await Promise.all([
+    getWantToReadPageBooks({ query, userId: user.id }),
+    getReadingSuggestions(user.id),
+  ]);
 
   return (
     <AppShell user={user}>
@@ -35,6 +39,8 @@ export default async function WantToReadPage({
             Bookshelf
           </Link>
         </div>
+
+        <ReadingSuggestionsCarousel suggestions={suggestions} />
 
         {books.length ? (
           <LibraryGrid books={books} />

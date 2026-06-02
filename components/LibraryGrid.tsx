@@ -35,6 +35,7 @@ function VirtualizedLibraryGrid() {
   const router = useRouter();
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
   const [formatFilter, setFormatFilter] = useState<FormatFilter>("all");
+  const [preview, setPreview] = useState<BookPreviewDetail | null>(null);
   const { books, toggleWantToRead, updateBook, updateProgressState, setOfflineState, removeBook } = useLibraryBooks();
   const epubBooks = useMemo(() => books.filter((book) => normalizeFormat(book.format) === "EPUB"), [books]);
   const pdfBooks = useMemo(() => books.filter((book) => normalizeFormat(book.format) === "PDF"), [books]);
@@ -46,6 +47,23 @@ function VirtualizedLibraryGrid() {
       if (openTimerRef.current) {
         window.clearTimeout(openTimerRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    function showPreview(event: Event) {
+      setPreview((event as CustomEvent<BookPreviewDetail>).detail);
+    }
+
+    function clearPreview() {
+      setPreview(null);
+    }
+
+    window.addEventListener(bookPreviewEvent, showPreview);
+    window.addEventListener(bookPreviewClearEvent, clearPreview);
+    return () => {
+      window.removeEventListener(bookPreviewEvent, showPreview);
+      window.removeEventListener(bookPreviewClearEvent, clearPreview);
     };
   }, []);
   // TanStack Virtual owns its internal measurement functions; this hook is intentionally not React Compiler memoized.
@@ -82,7 +100,8 @@ function VirtualizedLibraryGrid() {
         }}
       />
 
-      <div className="wood-library-shell">
+      <div className="wood-library-shell with-shelf-preview">
+        <ShelfBookPreview preview={preview} />
         <div ref={parentRef} className="wood-library-viewport">
           <div
             className="wood-library-virtual-space"
@@ -275,6 +294,7 @@ function TopShelfCoverBook({
         <BookCover book={book} />
         {book.localOnly ? <span className="local-only-tag">Local Only</span> : null}
         {book.offlineAvailable ? <span className="offline-checkmark" title="Downloaded for offline">✓</span> : null}
+        {book.readingTimeLabel ? <span className="reading-time-badge">{book.readingTimeLabel}</span> : null}
         {book.coverLoading ? <span className="cover-loading-overlay"><i className="book-cover-spinner" /></span> : null}
         <span className="wood-current-cover-shadow" aria-hidden="true" />
       </div>
@@ -335,8 +355,34 @@ function SpineBook({
       />
       {book.localOnly ? <i className="local-only-spine-dot" aria-label="Local Only" title="Local Only" /> : null}
       {book.offlineAvailable ? <i className="offline-spine-dot" aria-label="Downloaded for offline" title="Downloaded for offline" /> : null}
+      {book.readingTimeLabel ? <i className="reading-time-spine-badge">{book.readingTimeLabel}</i> : null}
       <span>{book.title}</span>
     </Link>
+  );
+}
+
+function ShelfBookPreview({ preview }: { preview: BookPreviewDetail | null }) {
+  return (
+    <section className="shelf-book-preview" aria-label="Book Preview">
+      <h2>Book Preview</h2>
+      {preview ? (
+        <div className="shelf-book-preview-content">
+          {preview.coverUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={preview.coverUrl} alt="" />
+          ) : (
+            <div className="shelf-book-preview-cover-fallback">CC</div>
+          )}
+          <div>
+            <strong>{preview.title}</strong>
+            <span>{preview.author ?? "Unknown author"}</span>
+            {preview.description ? <p>{preview.description}</p> : null}
+          </div>
+        </div>
+      ) : (
+        <p className="shelf-book-preview-idle">Hover over a book to view details...</p>
+      )}
+    </section>
   );
 }
 

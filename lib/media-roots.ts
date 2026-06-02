@@ -15,7 +15,7 @@ export async function getMediaRoots(): Promise<MediaDirectory[]> {
   const configured = process.env.CHAPTERCHASE_MEDIA_ROOTS ?? process.env.CHAPTERCHASE_LIBRARY_DIR;
   const roots = configured
     ? configured.split(path.delimiter).map((root) => root.trim()).filter(Boolean)
-    : ["/library", path.join(process.cwd(), "library")];
+    : ["/library", path.join(/* turbopackIgnore: true */ process.cwd(), "library")];
 
   if (!restrictMediaRoots()) {
     roots.push(os.homedir(), process.cwd());
@@ -29,7 +29,7 @@ export async function getMediaRoots(): Promise<MediaDirectory[]> {
 
   return uniquePaths(roots).map((root) => ({
     name: root,
-    path: path.resolve(root),
+    path: path.resolve(/* turbopackIgnore: true */ root),
   }));
 }
 
@@ -47,12 +47,12 @@ export async function listMediaDirectories(requestedPath?: string | null) {
     };
   }
 
-  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  const entries = await fs.readdir(/* turbopackIgnore: true */ currentPath, { withFileTypes: true });
   const directories = entries
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
     .map((entry) => ({
       name: entry.name,
-      path: path.join(currentPath, entry.name),
+      path: path.join(/* turbopackIgnore: true */ currentPath, entry.name),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -98,7 +98,7 @@ function normalizeUserPath(value: string) {
       return `${driveRoot[1].toUpperCase()}:\\`;
     }
   }
-  return path.resolve(trimmed);
+  return path.resolve(/* turbopackIgnore: true */ trimmed);
 }
 
 async function discoverWindowsFileSystemRoots() {

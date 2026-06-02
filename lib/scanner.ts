@@ -188,9 +188,9 @@ async function findBookFiles(rootPath: string, allowedFormats: Set<string>) {
   }> = [];
 
   async function walk(current: string) {
-    const entries = await fs.readdir(current, { withFileTypes: true });
+    const entries = await fs.readdir(/* turbopackIgnore: true */ current, { withFileTypes: true });
     for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
+      const fullPath = path.join(/* turbopackIgnore: true */ current, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath);
         continue;
@@ -202,7 +202,7 @@ async function findBookFiles(rootPath: string, allowedFormats: Set<string>) {
         continue;
       }
 
-      const stat = await fs.stat(fullPath);
+      const stat = await fs.stat(/* turbopackIgnore: true */ fullPath);
       files.push({ fullPath, size: stat.size, mtimeMs: Math.trunc(stat.mtimeMs), format });
     }
   }
@@ -212,6 +212,6 @@ async function findBookFiles(rootPath: string, allowedFormats: Set<string>) {
 }
 
 async function hashFile(filePath: string) {
-  const buffer = await fs.readFile(filePath);
+  const buffer = await fs.readFile(/* turbopackIgnore: true */ filePath);
   return createHash("sha256").update(buffer).digest("hex");
 }

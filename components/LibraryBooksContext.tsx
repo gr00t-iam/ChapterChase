@@ -22,6 +22,7 @@ export type LibraryBookView = {
   fileName?: string;
   coverObjectUrl?: string;
   offlineAvailable?: boolean;
+  readingTimeLabel?: string;
 };
 
 type LibraryBooksContextValue = {

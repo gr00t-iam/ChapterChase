@@ -5,7 +5,6 @@ import { prisma } from "@/lib/db";
 import { getLibraryBooks } from "@/lib/library-query";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LocalLibraryImporter } from "@/components/LocalLibraryImporter";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +61,6 @@ export default async function Home({
           )}
         </nav>
 
-        <LocalLibraryImporter />
         <FlatLibraryGrid books={books} />
         <aside className="fixed bottom-4 right-4 top-20 hidden w-5 flex-col items-center justify-between text-xs text-zinc-500 xl:flex">
           {"#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((letter) => (

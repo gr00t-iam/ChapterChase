@@ -1,9 +1,18 @@
 import path from "node:path";
 
-export const dataDir = process.env.CHAPTERCHASE_DATA_DIR ?? path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
-export const coversDir = path.join(dataDir, "covers");
-export const cacheDir = path.join(dataDir, "cache");
+export const dataDir = getRuntimeDataDir();
+export const coversDir = path.join(/* turbopackIgnore: true */ dataDir, "covers");
+export const cacheDir = path.join(/* turbopackIgnore: true */ dataDir, "cache");
 
 export function defaultDatabaseUrl() {
-  return `file:${path.join(dataDir, "chapterchase.db")}`;
+  return `file:${path.join(/* turbopackIgnore: true */ dataDir, "chapterchase.db")}`;
+}
+
+function getRuntimeDataDir() {
+  const configuredDataDir = process.env.CHAPTERCHASE_DATA_DIR?.trim();
+  if (configuredDataDir) {
+    return path.isAbsolute(configuredDataDir) ? configuredDataDir : path.join(/* turbopackIgnore: true */ process.cwd(), configuredDataDir);
+  }
+
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "data");
 }

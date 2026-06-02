@@ -5,7 +5,6 @@ import { prisma } from "@/lib/db";
 import { getLibraryBooks } from "@/lib/library-query";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LocalLibraryImporter } from "@/components/LocalLibraryImporter";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +47,6 @@ export default async function BookshelfPage({
           </div>
         </div>
 
-        <LocalLibraryImporter />
         <LibraryGrid books={books} />
       </main>
     </AppShell>

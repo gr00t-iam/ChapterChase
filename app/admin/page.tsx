@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/AppShell";
+import { AdminDashboard } from "@/components/AdminDashboard";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -18,22 +19,8 @@ export default async function AdminPage() {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <p className="text-sm font-medium uppercase tracking-[0.25em] text-sky-300">Admin</p>
         <h1 className="mt-2 text-3xl font-semibold">Server overview</h1>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Users" value={users} />
-          <Metric label="Folders" value={folders} />
-          <Metric label="Books" value={books} />
-          <Metric label="Failed imports" value={failed} />
-        </div>
+        <AdminDashboard initialCounts={{ users, folders, books, failedImports: failed }} />
       </main>
     </AppShell>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded border border-white/10 bg-white/[0.03] p-5">
-      <p className="text-sm text-zinc-400">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
-    </div>
   );
 }
