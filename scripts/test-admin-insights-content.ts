@@ -48,6 +48,7 @@ assert.match(libraryBooksContext, /readingTimeLabel/, "library book views should
 assert.match(libraryGrid, /reading-time/, "shelf cards should render reading-time badges");
 assert.match(css, /\.reading-suggestions-track\s*\{[\s\S]*?scrollbar-width:\s*none;/, "reading suggestions carousel should hide Firefox scrollbar chrome");
 assert.match(css, /\.reading-suggestions-track::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none;/, "reading suggestions carousel should hide WebKit scrollbar chrome");
+assert.match(css, /\.reading-suggestions-track\s*\{[\s\S]*?overflow-y:\s*hidden;/, "reading suggestions carousel should not show nested vertical scrollbar chrome");
 
 assert.match(libraryGrid, /ShelfBookPreview/, "wooden bookshelf should render the preview inside the shelf layout");
 assert.doesNotMatch(appFrame, /BookPreviewCard/, "app sidebar should no longer render the book preview card");
