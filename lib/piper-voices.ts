@@ -1,13 +1,8 @@
+import piperVoiceManifest from "@/config/piper-voices.json";
+
 export const defaultPiperVoiceId = 1;
 
-export const piperVoices = [
-  { id: 0, name: "en_US-lessac-medium", label: "Lessac" },
-  { id: 1, name: "en_US-amy-medium", label: "Amy" },
-  { id: 2, name: "en_US-ryan-medium", label: "Ryan" },
-  { id: 3, name: "en_US-libritts-high", label: "LibriTTS" },
-  { id: 4, name: "en_GB-alan-medium", label: "Alan" },
-  { id: 5, name: "en_GB-alba-medium", label: "Alba" },
-] as const;
+export const piperVoices = piperVoiceManifest;
 
 export type PiperVoiceId = (typeof piperVoices)[number]["id"];
 

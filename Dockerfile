@@ -12,6 +12,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN node scripts/download-piper-voices.mjs /app/piper-voices
 RUN npx prisma generate
 RUN npm run build
 
@@ -25,21 +26,27 @@ ENV CHAPTERCHASE_DATA_DIR=/data
 # Make them discoverable at runtime for the Node addon loader.
 ENV LD_LIBRARY_PATH=/app/node_modules/sherpa-onnx-linux-x64:/app/node_modules/sherpa-onnx-linux-arm64:$LD_LIBRARY_PATH
 
-# sherpa-onnx runtime dependencies:
+# Piper/sherpa-onnx runtime dependencies:
 # - libgomp1: OpenMP runtime used by onnxruntime builds
 # - libstdc++6/libgcc-s1/libatomic1: common C++ runtime deps for native addons
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl libgomp1 libstdc++6 libgcc-s1 libatomic1 && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl libgomp1 libstdc++6 libgcc-s1 libatomic1 python3 python3-pip python3-venv \
+  && python3 -m venv /opt/piper \
+  && /opt/piper/bin/pip install --no-cache-dir 'piper-tts==1.2.0' \
+  && rm -rf /var/lib/apt/lists/* \
   && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs chapterchase
+ENV PATH=/opt/piper/bin:$PATH
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/piper-voices ./piper-voices
 
-RUN mkdir -p /data /library && chown -R chapterchase:nodejs /data /app
+RUN mkdir -p /data /library /data/tts/piper && chown -R chapterchase:nodejs /data /app
 USER chapterchase
 EXPOSE 3000
 
-CMD ["sh", "-c", "node scripts/init-db.mjs && node server.js"]
+CMD ["node", "scripts/start-chapterchase.mjs"]
