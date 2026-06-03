@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { resolvePiperVoiceId } from "@/lib/piper-voices";
 
 const themes = new Set(["paper", "night", "scroll", "eink", "reseda", "deepsea"]);
 const layouts = new Set(["flat", "shelf"]);
@@ -47,7 +47,7 @@ export async function PATCH(request: Request) {
     data.readerTheme = body.readerTheme;
   }
   if (typeof body.ttsVoice === "string") {
-    data.ttsVoice = String(resolveKokoroVoiceId(body.ttsVoice));
+    data.ttsVoice = String(resolvePiperVoiceId(body.ttsVoice));
   }
   if (body.uiLayout && layouts.has(body.uiLayout)) {
     data.uiLayout = body.uiLayout;

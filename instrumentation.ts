@@ -7,8 +7,8 @@ export async function register() {
     return;
   }
 
-  const { startOpenAiCompatibleTtsWarmup } = await import("./lib/openai-tts");
-  void startOpenAiCompatibleTtsWarmup().catch((error) => {
-    console.warn("ChapterChase Kokoro TTS prewarm failed:", error instanceof Error ? error.message : error);
+  const { startPiperTtsWarmup } = await import("./lib/piper-tts");
+  void startPiperTtsWarmup().catch((error) => {
+    console.warn("ChapterChase Piper TTS prewarm failed:", error instanceof Error ? error.message : error);
   });
 }

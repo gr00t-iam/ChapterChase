@@ -10,7 +10,7 @@ import { createClientId } from "@/lib/client-id";
 import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
-import { defaultKokoroVoiceId, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { defaultPiperVoiceId, resolvePiperVoiceId } from "@/lib/piper-voices";
 import {
   generatedSpeechWordTrackingEnabled,
   normalizeTtsEngine,
@@ -171,7 +171,7 @@ export default function ChapterChaseReader({
   pages,
   initialPage,
   initialTheme = "paper",
-  initialTtsVoice = String(defaultKokoroVoiceId),
+  initialTtsVoice = String(defaultPiperVoiceId),
   localFileBlob,
 }: ReaderProps) {
   const isPdf = format === "PDF";
@@ -197,10 +197,10 @@ export default function ChapterChaseReader({
   const [isToolbarCollapsed, setIsToolbarCollapsed] = useState(false);
   const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>({
     bionicReading: false,
-    ttsVoice: String(resolveKokoroVoiceId(initialTtsVoice)),
+    ttsVoice: String(resolvePiperVoiceId(initialTtsVoice)),
     ttsEngine: "server",
   });
-  const [ttsVoice, setTtsVoice] = useState(() => String(resolveKokoroVoiceId(initialTtsVoice)));
+  const [ttsVoice, setTtsVoice] = useState(() => String(resolvePiperVoiceId(initialTtsVoice)));
   const [readerTheme, setReaderTheme] = useState(normalizedInitialTheme);
   const [readingRulerEnabled, setReadingRulerEnabled] = useState(false);
   const [isTimerVisible, setIsTimerVisible] = useState(false);
@@ -293,7 +293,7 @@ export default function ChapterChaseReader({
     const timer = window.setTimeout(() => {
       const nextSettings = loadLocalReaderSettings();
       setLocalReaderSettings(nextSettings);
-      setTtsVoice(String(resolveKokoroVoiceId(nextSettings.ttsVoice ?? initialTtsVoice)));
+      setTtsVoice(String(resolvePiperVoiceId(nextSettings.ttsVoice ?? initialTtsVoice)));
       setReaderTheme(
         nextSettings.activeReadingProfile && readerThemes.has(nextSettings.activeReadingProfile)
           ? nextSettings.activeReadingProfile
@@ -417,7 +417,7 @@ export default function ChapterChaseReader({
         setReaderTheme(nextSettings.activeReadingProfile);
       }
       if (nextSettings.ttsVoice) {
-        setTtsVoice(String(resolveKokoroVoiceId(nextSettings.ttsVoice)));
+        setTtsVoice(String(resolvePiperVoiceId(nextSettings.ttsVoice)));
       }
     };
 
@@ -916,7 +916,7 @@ export default function ChapterChaseReader({
     }
 
     const timer = window.setTimeout(() => {
-      warmKokoroTts(ttsVoice);
+      warmPiperTts(ttsVoice);
     }, 650);
     return () => window.clearTimeout(timer);
   }, [speechSupported, ttsVoice]);
@@ -2091,7 +2091,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function loadLocalReaderSettings(): LocalReaderSettings {
   if (typeof window === "undefined") {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" };
+    return { bionicReading: false, ttsVoice: String(defaultPiperVoiceId), ttsEngine: "server" };
   }
 
   try {
@@ -2104,16 +2104,16 @@ function loadLocalReaderSettings(): LocalReaderSettings {
     const activeReadingProfile = typeof parsed.activeReadingProfile === "string" ? parsed.activeReadingProfile : undefined;
     return {
       activeReadingProfile,
-      ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)),
+      ttsVoice: String(resolvePiperVoiceId(parsed.ttsVoice ?? defaultPiperVoiceId)),
       ttsEngine: normalizeTtsEngine(parsed.ttsEngine),
       bionicReading: parsed.bionicReading === true,
     };
   } catch {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" };
+    return { bionicReading: false, ttsVoice: String(defaultPiperVoiceId), ttsEngine: "server" };
   }
 }
 
-function warmKokoroTts(voiceId: string) {
+function warmPiperTts(voiceId: string) {
   const body = JSON.stringify({ voiceId });
   if (typeof window.fetch === "function") {
     void window

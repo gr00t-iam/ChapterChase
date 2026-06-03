@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { defaultKokoroVoiceId, kokoroVoices, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { defaultPiperVoiceId, piperVoices, resolvePiperVoiceId } from "@/lib/piper-voices";
 import { normalizeSettingsSection, settingsSectionPath, settingsSections, type SettingsSection } from "@/lib/settings-tabs";
 import { normalizeTtsEngine, type TtsEngine } from "@/lib/tts-client";
 
@@ -62,7 +62,7 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
   const [status, setStatus] = useState<string | null>(null);
   const [form, setForm] = useState(() => ({
     ...user,
-    ttsVoice: String(resolveKokoroVoiceId(user.ttsVoice)),
+    ttsVoice: String(resolvePiperVoiceId(user.ttsVoice)),
     annotationHighlightColors: parseColors(user.annotationHighlightColors),
     readingProfiles: parseProfiles(user.readingProfiles),
   }));
@@ -225,8 +225,8 @@ export function UserSettingsForm({ user }: { user: SettingsUser }) {
               </label>
               <label className="settings-field">
                 <span>Speech voice</span>
-                <select value={form.ttsVoice} onChange={(event) => update("ttsVoice", String(resolveKokoroVoiceId(event.target.value)))}>
-                  {kokoroVoices.map((voice) => (
+                <select value={form.ttsVoice} onChange={(event) => update("ttsVoice", String(resolvePiperVoiceId(event.target.value)))}>
+                  {piperVoices.map((voice) => (
                     <option key={voice.id} value={voice.id}>
                       {voice.label}
                     </option>
@@ -369,18 +369,18 @@ function resolveReaderTheme(value: string): ReadingProfile["theme"] {
 
 function loadLocalUserSettings() {
   if (typeof window === "undefined") {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" as TtsEngine };
+    return { bionicReading: false, ttsVoice: String(defaultPiperVoiceId), ttsEngine: "server" as TtsEngine };
   }
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem("userSettings") ?? "{}") as { bionicReading?: unknown; ttsVoice?: unknown; ttsEngine?: unknown };
     return {
       bionicReading: parsed.bionicReading === true,
-      ttsVoice: String(resolveKokoroVoiceId(parsed.ttsVoice ?? defaultKokoroVoiceId)),
+      ttsVoice: String(resolvePiperVoiceId(parsed.ttsVoice ?? defaultPiperVoiceId)),
       ttsEngine: normalizeTtsEngine(parsed.ttsEngine),
     };
   } catch {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" as TtsEngine };
+    return { bionicReading: false, ttsVoice: String(defaultPiperVoiceId), ttsEngine: "server" as TtsEngine };
   }
 }
 
