@@ -857,11 +857,10 @@ export default function ChapterChaseReader({
             await audio.play();
           } catch (error) {
             if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
-            const message = error instanceof Error ? error.message : "Press Play to start generated speech.";
             isReadingActiveRef.current = false;
             setIsReadingActive(false);
             setIsSpeechPaused(true);
-            setSpeechError(message);
+            setSpeechError(getSpeechPlaybackPrompt(error));
             return;
           }
           startSpeechProgressTracking(audio, clampedPageIndex, chunk.wordCount, chunk.wordOffset);
@@ -1197,7 +1196,7 @@ export default function ChapterChaseReader({
     const pausedAudio = speechAudioRef.current;
     if (pausedAudio && pausedAudio.paused && !pausedAudio.ended) {
       void pausedAudio.play().catch((error: unknown) => {
-        setSpeechError(error instanceof Error ? error.message : "Unable to resume speech.");
+        setSpeechError(getSpeechPlaybackPrompt(error));
         finishSpeechReading();
       });
       const progressMeta = speechProgressMetaRef.current;
@@ -2132,6 +2131,16 @@ function warmKokoroTts(voiceId: string) {
   request.open("POST", "/api/tts/warmup");
   request.setRequestHeader("Content-Type", "application/json");
   request.send(body);
+}
+
+function getSpeechPlaybackPrompt(error: unknown) {
+  if (error instanceof DOMException && error.name === "NotAllowedError") {
+    return "Speech is ready. Press Play to start.";
+  }
+  if (error instanceof Error && /user didn't interact|notallowed/i.test(error.message)) {
+    return "Speech is ready. Press Play to start.";
+  }
+  return error instanceof Error ? error.message : "Press Play to start generated speech.";
 }
 
 async function fetchPreferredTtsAudioBlob(
