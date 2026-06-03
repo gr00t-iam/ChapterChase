@@ -1,7 +1,12 @@
 import { requireUser } from "@/lib/auth";
 import { resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import {
+  getOpenAiCompatibleTtsCacheConfig,
+  getOpenAiCompatibleTtsConfigSummary,
+  OpenAiCompatibleTtsError,
+  synthesizeWithOpenAiCompatibleKokoro,
+} from "@/lib/openai-tts";
 import { dataDir } from "@/lib/paths";
-import { getSherpaTtsConfigSummary, SherpaTtsSetupError, synthesizeWithSherpaKokoro } from "@/lib/sherpa-tts";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,7 +31,7 @@ export async function POST(request: Request) {
     const cacheDir = path.join(/* turbopackIgnore: true */ dataDir, "tts-cache");
     const cacheKey = crypto
       .createHash("sha256")
-      .update(JSON.stringify({ v: 1, voice: resolvedVoice, text: normalizedText }))
+      .update(JSON.stringify({ v: 2, backend: getOpenAiCompatibleTtsCacheConfig(), voice: resolvedVoice, text: normalizedText }))
       .digest("hex");
     const cachePath = path.join(/* turbopackIgnore: true */ cacheDir, `kokoro-${cacheKey}.wav`);
 
@@ -39,11 +44,11 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    const status = error instanceof SherpaTtsSetupError ? 503 : 500;
+    const status = error instanceof OpenAiCompatibleTtsError ? error.status : 500;
     return Response.json(
       {
         error: error instanceof Error ? error.message : "Unable to synthesize speech.",
-        tts: getSherpaTtsConfigSummary(),
+        tts: getOpenAiCompatibleTtsConfigSummary(),
       },
       { status }
     );
@@ -56,7 +61,7 @@ function getOrCreateCachedSpeech(cacheKey: string, cachePath: string, text: stri
     return pending;
   }
 
-  const synthesis = synthesizeWithSherpaKokoro(text, voiceId)
+  const synthesis = synthesizeWithOpenAiCompatibleKokoro(text, voiceId)
     .then(async (wav) => {
       await fs.mkdir(/* turbopackIgnore: true */ path.dirname(cachePath), { recursive: true }).catch(() => undefined);
       await fs.writeFile(/* turbopackIgnore: true */ cachePath, new Uint8Array(wav)).catch(() => undefined);

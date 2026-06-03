@@ -7,8 +7,8 @@ export async function register() {
     return;
   }
 
-  const { startSherpaTtsWarmup } = await import("./lib/sherpa-tts");
-  void startSherpaTtsWarmup().catch((error) => {
+  const { startOpenAiCompatibleTtsWarmup } = await import("./lib/openai-tts");
+  void startOpenAiCompatibleTtsWarmup().catch((error) => {
     console.warn("ChapterChase Kokoro TTS prewarm failed:", error instanceof Error ? error.message : error);
   });
 }

@@ -12,21 +12,14 @@ import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
 import { defaultKokoroVoiceId, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
 import {
-  getLocalKokoroInstallState,
-  normalizeTtsEngine,
-  shouldUseLocalKokoro,
-  supportsLocalKokoroRuntime,
-  synthesizeLocalKokoroBlob,
-  warmLocalKokoroTts,
-  type TtsEngine,
-} from "@/lib/local-kokoro-tts";
-import {
   generatedSpeechWordTrackingEnabled,
+  normalizeTtsEngine,
   selectTtsChunkMaxCharacters,
   splitTextIntoTtsChunks,
   ttsChunkRequestTimeoutMs,
   ttsInitialRequestTimeoutMs,
   type TtsChunk,
+  type TtsEngine,
 } from "@/lib/tts-client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
@@ -205,7 +198,7 @@ export default function ChapterChaseReader({
   const [localReaderSettings, setLocalReaderSettings] = useState<LocalReaderSettings>({
     bionicReading: false,
     ttsVoice: String(resolveKokoroVoiceId(initialTtsVoice)),
-    ttsEngine: "auto",
+    ttsEngine: "server",
   });
   const [ttsVoice, setTtsVoice] = useState(() => String(resolveKokoroVoiceId(initialTtsVoice)));
   const [readerTheme, setReaderTheme] = useState(normalizedInitialTheme);
@@ -256,7 +249,6 @@ export default function ChapterChaseReader({
   const pageEnteredAtRef = useRef(0);
   const lastAnalyticsPageRef = useRef(pageIndex);
   const bionicReading = localReaderSettings.bionicReading;
-  const ttsEngine = localReaderSettings.ttsEngine;
   const readerShellStyle = useMemo(
     () =>
       ({
@@ -772,8 +764,7 @@ export default function ChapterChaseReader({
 
       try {
         const shouldTrackWords = generatedSpeechWordTrackingEnabled && !safePages[clampedPageIndex]?.image;
-        const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
-        const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(shouldTryLocalTts);
+        const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(false);
         const chunks = splitTextIntoTtsChunks(text, ttsChunkMaxCharacters).map((chunk) => (shouldTrackWords ? chunk : { ...chunk, wordCount: 0 }));
         speechChunkMetaRef.current = { pageIndex: clampedPageIndex, chunks, index: 0 };
 
@@ -805,7 +796,6 @@ export default function ChapterChaseReader({
             blob = await fetchPreferredTtsAudioBlob(
               chunk.text,
               ttsVoice,
-              ttsEngine,
               controller.signal,
               chunkIndex === 0 ? ttsInitialRequestTimeoutMs : ttsChunkRequestTimeoutMs
             );
@@ -820,7 +810,7 @@ export default function ChapterChaseReader({
             speechPrefetchRef.current = {
               index: nextIndex,
               controller: nextController,
-              promise: fetchPreferredTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, ttsEngine, nextController.signal, ttsChunkRequestTimeoutMs),
+              promise: fetchPreferredTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal, ttsChunkRequestTimeoutMs),
             };
           } else if (nextIndex >= meta.chunks.length && clampedPageIndex < pageCount - 1) {
             void prefetchFirstTtsChunkForPage(clampedPageIndex + 1);
@@ -877,14 +867,13 @@ export default function ChapterChaseReader({
 
     async function prefetchFirstTtsChunkForPage(nextPageIndex: number) {
       const nextText = isPdf ? await extractPdfText(nextPageIndex) : (safePages[nextPageIndex]?.text ?? "");
-      const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
-      const firstChunk = splitTextIntoTtsChunks(nextText, selectTtsChunkMaxCharacters(shouldTryLocalTts))[0];
+      const firstChunk = splitTextIntoTtsChunks(nextText, selectTtsChunkMaxCharacters(false))[0];
       if (!firstChunk?.text) {
         return;
       }
 
       const controller = new AbortController();
-      await fetchPreferredTtsAudioBlob(firstChunk.text, ttsVoice, ttsEngine, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
+      await fetchPreferredTtsAudioBlob(firstChunk.text, ttsVoice, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
     }
   }, [
     advanceReadingAfterSpeech,
@@ -897,7 +886,6 @@ export default function ChapterChaseReader({
     safePages,
     speechSupported,
     startSpeechProgressTracking,
-    ttsEngine,
     ttsVoice,
   ]);
 
@@ -911,15 +899,10 @@ export default function ChapterChaseReader({
     }
 
     const timer = window.setTimeout(() => {
-      const shouldWarmLocal = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
-      if (shouldWarmLocal) {
-        void warmLocalKokoroTts().catch(() => warmKokoroTts(ttsVoice));
-        return;
-      }
       warmKokoroTts(ttsVoice);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [speechSupported, ttsEngine, ttsVoice]);
+  }, [speechSupported, ttsVoice]);
 
   useEffect(() => {
     if (!isPdf) {
@@ -2093,7 +2076,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function loadLocalReaderSettings(): LocalReaderSettings {
   if (typeof window === "undefined") {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" };
   }
 
   try {
@@ -2111,7 +2094,7 @@ function loadLocalReaderSettings(): LocalReaderSettings {
       bionicReading: parsed.bionicReading === true,
     };
   } catch {
-    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "auto" };
+    return { bionicReading: false, ttsVoice: String(defaultKokoroVoiceId), ttsEngine: "server" };
   }
 }
 
@@ -2138,22 +2121,9 @@ function warmKokoroTts(voiceId: string) {
 async function fetchPreferredTtsAudioBlob(
   text: string,
   voiceId: string,
-  ttsEngine: TtsEngine,
   signal: AbortSignal,
   timeoutMs = ttsChunkRequestTimeoutMs
 ): Promise<Blob> {
-  const shouldTryLocal = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
-  if (shouldTryLocal) {
-    try {
-      return await synthesizeLocalKokoroBlob(text, voiceId, signal);
-    } catch (error) {
-      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        throw error;
-      }
-      console.warn("On-device speech failed; falling back to server TTS.", error);
-    }
-  }
-
   return fetchTtsAudioBlob(text, voiceId, signal, timeoutMs);
 }
 

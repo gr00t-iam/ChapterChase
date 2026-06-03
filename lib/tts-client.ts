@@ -10,6 +10,13 @@ export const generatedSpeechWordTrackingEnabled = false;
 export const ttsInitialRequestTimeoutMs = 90000;
 export const ttsChunkRequestTimeoutMs = 45000;
 
+export type TtsEngine = "server";
+
+export function normalizeTtsEngine(value: unknown): TtsEngine {
+  void value;
+  return "server";
+}
+
 export function selectTtsChunkMaxCharacters(useLocalTts: boolean) {
   return useLocalTts ? localTtsChunkMaxCharacters : defaultTtsChunkMaxCharacters;
 }
