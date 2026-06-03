@@ -234,6 +234,7 @@ export default function ChapterChaseReader({
   const speechChunkMetaRef = useRef<{ pageIndex: number; chunks: TtsChunk[]; index: number } | null>(null);
   const speechPrefetchRef = useRef<{ index: number; controller: AbortController; promise: Promise<Blob> } | null>(null);
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
+  const preservePreparedSpeechAudioOnceRef = useRef(false);
   const pendingHighlightRef = useRef<Pick<HighlightPopover, "pageIndex" | "text" | "occurrence"> | null>(null);
   const pendingHighlightCreatedAtRef = useRef(0);
   const ignoreNextHighlightColorClickRef = useRef(false);
@@ -733,7 +734,7 @@ export default function ChapterChaseReader({
     [clearAutoAdvanceFallback, finishSpeechReading, fixedPageMode, pageCount]
   );
 
-  const readCurrentPage = useCallback(async (targetPageIndex = latestPage.current) => {
+  const readCurrentPage = useCallback(async (targetPageIndex = latestPage.current, preservePreparedSpeechAudio = false) => {
     if (!speechSupported) {
       return;
     }
@@ -751,7 +752,11 @@ export default function ChapterChaseReader({
 
     utteranceIdRef.current += 1;
     const utteranceId = utteranceIdRef.current;
-    cleanupCurrentSpeechAudio();
+    const shouldPreservePreparedSpeechAudio = preservePreparedSpeechAudio || preservePreparedSpeechAudioOnceRef.current;
+    preservePreparedSpeechAudioOnceRef.current = false;
+    if (!shouldPreservePreparedSpeechAudio) {
+      cleanupCurrentSpeechAudio();
+    }
     isReadingActiveRef.current = true;
     setIsReadingActive(true);
     setIsSpeechPaused(false);
@@ -827,6 +832,8 @@ export default function ChapterChaseReader({
             audio = new Audio();
             speechAudioRef.current = audio;
           }
+          audio.pause();
+          audio.muted = false;
           speechAudioUrlRef.current = audioUrl;
           audio.defaultPlaybackRate = 1;
           audio.playbackRate = 1;
@@ -1138,21 +1145,19 @@ export default function ChapterChaseReader({
     const primer = new Audio();
     primer.muted = true;
     primer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-    void primer.play().catch(() => undefined).finally(() => {
-      primer.pause();
-      primer.removeAttribute("src");
-      primer.load();
-    });
+    speechAudioRef.current = primer;
+    preservePreparedSpeechAudioOnceRef.current = true;
+    void primer.play().catch(() => undefined);
 
     if (isOnCover) {
       if (pageFlipRef.current) {
         pageFlipRef.current.flipNext("top");
       } else {
         setFlipIndex(1);
-        window.setTimeout(() => readCurrentPage(0), 160);
+        window.setTimeout(() => readCurrentPage(0, true), 160);
       }
     } else {
-      readCurrentPage(pageIndex);
+      readCurrentPage(pageIndex, true);
     }
   }, [cleanupCurrentSpeechAudio, isOnCover, pageIndex, readCurrentPage, speechSupported]);
 
