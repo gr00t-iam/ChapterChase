@@ -834,6 +834,7 @@ export default function ChapterChaseReader({
           }
           audio.pause();
           audio.muted = false;
+          audio.volume = 1;
           speechAudioUrlRef.current = audioUrl;
           audio.defaultPlaybackRate = 1;
           audio.playbackRate = 1;
@@ -852,7 +853,17 @@ export default function ChapterChaseReader({
 
           audio.src = audioUrl;
           setIsSpeechGenerating(false);
-          await audio.play();
+          try {
+            await audio.play();
+          } catch (error) {
+            if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
+            const message = error instanceof Error ? error.message : "Press Play to start generated speech.";
+            isReadingActiveRef.current = false;
+            setIsReadingActive(false);
+            setIsSpeechPaused(true);
+            setSpeechError(message);
+            return;
+          }
           startSpeechProgressTracking(audio, clampedPageIndex, chunk.wordCount, chunk.wordOffset);
         };
 
@@ -1143,7 +1154,7 @@ export default function ChapterChaseReader({
     // Some browsers (notably iOS Safari / WKWebView) will reject playback if audio.play()
     // happens only after async work/network completes.
     const primer = new Audio();
-    primer.muted = true;
+    primer.volume = 0;
     primer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
     speechAudioRef.current = primer;
     preservePreparedSpeechAudioOnceRef.current = true;
