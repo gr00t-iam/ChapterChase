@@ -2,6 +2,8 @@ services:
   chapterchase:
     build: .
     container_name: chapterchase
+    depends_on:
+      - kokoro
     ports:
       - "0.0.0.0:3000:3000"
     environment:
@@ -11,6 +13,9 @@ services:
       CHAPTERCHASE_MEDIA_ROOTS: "/library"
       CHAPTERCHASE_RESTRICT_MEDIA_ROOTS: "false"
       CHAPTERCHASE_SECURE_COOKIES: "false"
+      CHAPTERCHASE_TTS_BASE_URL: "http://kokoro:8880/v1"
+      CHAPTERCHASE_TTS_MODEL: "kokoro"
+      CHAPTERCHASE_TTS_RESPONSE_FORMAT: "wav"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: "production"
       PORT: "3000"
@@ -18,4 +23,11 @@ services:
     volumes:
       - /volume1/Docker/chapterchase/data:/data
       - /volume1/home/gr00t/Books:/library:ro
+    restart: unless-stopped
+
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: chapterchase-kokoro
+    ports:
+      - "0.0.0.0:8880:8880"
     restart: unless-stopped
