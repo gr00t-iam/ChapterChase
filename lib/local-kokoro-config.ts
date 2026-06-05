@@ -1,11 +1,16 @@
+import { getKokoroVoiceName, resolveKokoroVoiceId } from "@/lib/kokoro-voices";
+import { getPiperVoiceName, resolvePiperVoiceId } from "@/lib/piper-voices";
+
 export type TtsEngine = "auto" | "local" | "server";
 export type LocalKokoroModelProfileId = "balanced" | "full";
+export type LocalKokoroVoiceQuality = "low" | "high";
 
 export type LocalKokoroModelProfile = {
   id: LocalKokoroModelProfileId;
   label: string;
-  dtype: "q8" | "fp32";
-  modelFile: "model_quantized.onnx" | "model.onnx";
+  quality: LocalKokoroVoiceQuality;
+  femaleVoiceId: string;
+  maleVoiceId: string;
   downloadDescription: string;
 };
 
@@ -14,9 +19,8 @@ export type LocalKokoroInstallState = {
   installedAt?: string;
   modelId?: string;
   profileId?: LocalKokoroModelProfileId;
-  voice?: string;
-  dtype?: string;
-  modelFile?: string;
+  voiceId?: string;
+  quality?: LocalKokoroVoiceQuality;
   cacheVersion?: string;
 };
 
@@ -29,28 +33,32 @@ export type LocalKokoroProgress = {
 
 export const localKokoroStorageKey = "chapterchase:local-kokoro-tts";
 export const localKokoroProfileStorageKey = "chapterchase:local-kokoro-profile";
-export const localKokoroCacheVersion = "browser-cache-v1";
-export const localKokoroModelId = "onnx-community/Kokoro-82M-v1.0-ONNX";
-export const localKokoroVoiceId = "af_bella";
+export const localKokoroCacheVersion = "opfs-v2";
+export const localKokoroModelId = "mintplex-piper-web";
+export const localKokoroVoiceId = "en_US-lessac-low";
 export const localKokoroDefaultProfileId: LocalKokoroModelProfileId = "balanced";
 export const localKokoroModelProfiles: Record<LocalKokoroModelProfileId, LocalKokoroModelProfile> = {
   balanced: {
     id: "balanced",
     label: "Balanced",
-    dtype: "q8",
-    modelFile: "model_quantized.onnx",
-    downloadDescription: "about 95 MB",
+    quality: "low",
+    femaleVoiceId: "en_US-lessac-low",
+    maleVoiceId: "en_US-ryan-low",
+    downloadDescription: "smaller download",
   },
   full: {
     id: "full",
     label: "Full quality",
-    dtype: "fp32",
-    modelFile: "model.onnx",
-    downloadDescription: "about 326 MB",
+    quality: "high",
+    femaleVoiceId: "en_US-lessac-high",
+    maleVoiceId: "en_US-ryan-high",
+    downloadDescription: "higher-quality voice",
   },
 };
-export const localKokoroDtype = localKokoroModelProfiles[localKokoroDefaultProfileId].dtype;
+export const localKokoroDtype = localKokoroModelProfiles[localKokoroDefaultProfileId].quality;
 export const localKokoroDownloadDescription = localKokoroModelProfiles[localKokoroDefaultProfileId].downloadDescription;
+
+const maleSourceVoices = new Set(["am_adam", "am_michael", "bm_george", "bm_lewis", "en_US-ryan-medium", "en_GB-alan-medium"]);
 
 export function resolveLocalKokoroProfileId(value: unknown): LocalKokoroModelProfileId {
   return value === "full" || value === "balanced" ? value : localKokoroDefaultProfileId;
@@ -58,4 +66,35 @@ export function resolveLocalKokoroProfileId(value: unknown): LocalKokoroModelPro
 
 export function getLocalKokoroModelProfile(value: unknown): LocalKokoroModelProfile {
   return localKokoroModelProfiles[resolveLocalKokoroProfileId(value)];
+}
+
+export function resolveLocalKokoroVoiceId(
+  value: unknown,
+  profileId: LocalKokoroModelProfileId = localKokoroDefaultProfileId
+): string {
+  const profile = getLocalKokoroModelProfile(profileId);
+  const sourceVoiceName = resolveSourceVoiceName(value);
+  return maleSourceVoices.has(sourceVoiceName) ? profile.maleVoiceId : profile.femaleVoiceId;
+}
+
+function resolveSourceVoiceName(value: unknown) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return getPiperVoiceName(resolvePiperVoiceId(value));
+    }
+    if (trimmed.startsWith("en_")) {
+      return trimmed;
+    }
+    if (trimmed.includes("_")) {
+      return trimmed;
+    }
+  }
+
+  const piperVoiceName = getPiperVoiceName(resolvePiperVoiceId(value));
+  if (piperVoiceName) {
+    return piperVoiceName;
+  }
+
+  return getKokoroVoiceName(resolveKokoroVoiceId(value));
 }

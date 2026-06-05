@@ -10,11 +10,12 @@ import {
   localKokoroModelId,
   localKokoroVoiceId,
   normalizeTtsEngine,
+  resolveLocalKokoroVoiceId,
   resolveLocalKokoroProfileId,
   shouldUseLocalKokoro,
   supportsLocalKokoroRuntime,
 } from "../lib/local-kokoro-tts";
-import { kokoroVoices } from "../lib/kokoro-voices";
+import { piperVoices } from "../lib/piper-voices";
 import { getServiceWorkerContainer } from "../lib/offline-client";
 import { normalizeSettingsSection, settingsSectionPath } from "../lib/settings-tabs";
 import {
@@ -91,44 +92,50 @@ assert.equal(normalizeTtsEngine("invalid"), "auto", "unknown TTS engine preferen
 assert.equal(localKokoroDefaultProfileId, "balanced", "the smaller browser model should remain the default local speech download");
 assert.equal(resolveLocalKokoroProfileId("full"), "full", "the full local speech model profile should be accepted");
 assert.equal(resolveLocalKokoroProfileId("unexpected"), "balanced", "unknown local speech model profiles should fall back to balanced");
-assert.equal(getLocalKokoroModelProfile("balanced").modelFile, "model_quantized.onnx", "balanced local speech should use the 95 MB quantized model");
-assert.equal(getLocalKokoroModelProfile("full").modelFile, "model.onnx", "full local speech should use the full model file");
-assert.equal(localKokoroModelProfiles.full.dtype, "fp32", "full local speech should request the fp32 ONNX model");
+assert.equal(localKokoroDtype, "low", "the balanced local Piper profile should remain the default");
+assert.equal(getLocalKokoroModelProfile("balanced").femaleVoiceId, "en_US-lessac-low", "balanced local speech should use the smaller female Piper voice");
+assert.equal(getLocalKokoroModelProfile("full").maleVoiceId, "en_US-ryan-high", "full local speech should use the higher-quality male Piper voice");
+assert.equal(localKokoroModelProfiles.full.quality, "high", "full local speech should request the high-quality Piper voice");
+assert.equal(resolveLocalKokoroVoiceId("1", "balanced"), "en_US-lessac-low", "non-male Piper voices should map to the female local Piper voice");
+assert.equal(resolveLocalKokoroVoiceId("2", "full"), "en_US-ryan-high", "Ryan should map to the male local Piper voice");
 assert.equal(shouldUseLocalKokoro("local", { status: "not-installed" }), true, "explicit local mode should attempt on-device TTS");
 assert.equal(shouldUseLocalKokoro("server", { status: "ready" }), false, "server mode should bypass on-device TTS");
 assert.equal(
-  shouldUseLocalKokoro("auto", { status: "ready", modelId: localKokoroModelId, voice: localKokoroVoiceId, dtype: localKokoroDtype, cacheVersion: localKokoroCacheVersion }),
+  shouldUseLocalKokoro("auto", { status: "ready", modelId: localKokoroModelId, voiceId: localKokoroVoiceId, quality: localKokoroDtype, cacheVersion: localKokoroCacheVersion }),
   true,
-  "auto mode should use on-device TTS after the Kokoro model is installed"
+  "auto mode should use on-device TTS after the Piper voice is installed"
 );
 assert.equal(
   shouldUseLocalKokoro("auto", {
     status: "ready",
     modelId: localKokoroModelId,
     profileId: "full",
-    voice: "af_bella",
-    dtype: "fp32",
-    modelFile: "model.onnx",
+    voiceId: "en_US-lessac-high",
+    quality: "high",
     cacheVersion: localKokoroCacheVersion,
   }),
   true,
-  "auto mode should use on-device TTS after the full local speech model is installed"
+  "auto mode should use on-device TTS after the full local speech voice is installed"
 );
 assert.equal(shouldUseLocalKokoro("auto", { status: "not-installed" }), false, "auto mode should use server TTS until local Kokoro is ready");
 assert.equal(
-  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voice: localKokoroVoiceId, dtype: localKokoroDtype, cacheVersion: localKokoroCacheVersion }),
+  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voiceId: localKokoroVoiceId, quality: localKokoroDtype, cacheVersion: localKokoroCacheVersion }),
   true,
-  "the local Kokoro install marker should require the expected model, dtype, and cache backend"
+  "the local Piper install marker should require the expected model, quality, and cache backend"
 );
 assert.equal(
-  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voice: "af_heart", dtype: localKokoroDtype, cacheVersion: localKokoroCacheVersion }),
+  isLocalKokoroReady(
+    { status: "ready", modelId: localKokoroModelId, profileId: "balanced", voiceId: "en_US-ryan-low", quality: localKokoroDtype, cacheVersion: localKokoroCacheVersion },
+    "balanced",
+    "am_adam"
+  ),
   true,
-  "the local Kokoro install marker should track the model cache, not one selected voice"
+  "the local Piper install marker should accept the matching mapped voice"
 );
 assert.equal(
-  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voice: localKokoroVoiceId, dtype: localKokoroDtype }),
+  isLocalKokoroReady({ status: "ready", modelId: localKokoroModelId, voiceId: localKokoroVoiceId, quality: localKokoroDtype }),
   false,
-  "legacy local Kokoro markers should not be treated as ready after the cache backend changes"
+  "legacy local Piper markers should not be treated as ready after the cache backend changes"
 );
 assert.equal(
   isLocalKokoroReady(
@@ -136,15 +143,14 @@ assert.equal(
       status: "ready",
       modelId: localKokoroModelId,
       profileId: "full",
-      voice: "af_bella",
-      dtype: "fp32",
-      modelFile: "model.onnx",
+      voiceId: "en_US-lessac-high",
+      quality: "high",
       cacheVersion: localKokoroCacheVersion,
     },
     "full"
   ),
   true,
-  "the full local speech install marker should be ready only when the full model profile is selected"
+  "the full local speech install marker should be ready only when the full Piper profile is selected"
 );
 assert.equal(
   isLocalKokoroReady(
@@ -152,23 +158,21 @@ assert.equal(
       status: "ready",
       modelId: localKokoroModelId,
       profileId: "full",
-      voice: "af_bella",
-      dtype: "fp32",
-      modelFile: "model.onnx",
+      voiceId: "en_US-lessac-high",
+      quality: "high",
       cacheVersion: localKokoroCacheVersion,
     },
     "balanced"
   ),
   false,
-  "a full local speech install marker should not satisfy the balanced profile control"
+  "a full local speech install marker should not satisfy the balanced Piper profile control"
 );
-assert.equal(kokoroVoices.find((voice) => voice.name === "af_bella")?.label, "Bella", "settings should display the friendly voice name only");
-assert.equal(kokoroVoices.find((voice) => voice.name === "am_adam")?.label, "Adam", "settings should not expose Kokoro voice ids in labels");
-assert.equal(kokoroVoices.find((voice) => voice.name === "af_heart")?.label, "Heart", "all visible voice options should map to a real browser voice file");
-assert.equal(kokoroVoices.map((voice) => String(voice.name)).includes("af"), false, "settings should not expose the legacy aggregate voice id that cannot load in the browser");
+assert.equal(piperVoices.find((voice) => voice.id === 1)?.label, "Amy", "settings should display the friendly Piper voice label");
+assert.equal(piperVoices.find((voice) => voice.id === 2)?.name, "en_US-ryan-medium", "settings should preserve the server Piper voice id for Ryan");
+assert.equal(piperVoices.every((voice) => voice.name.startsWith("en_")), true, "visible speech voices should map to concrete Piper voice files");
 
 const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
-const originalCachesDescriptor = Object.getOwnPropertyDescriptor(globalThis, "caches");
+const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 Object.defineProperty(globalThis, "window", {
   configurable: true,
   value: {
@@ -188,15 +192,33 @@ Object.defineProperty(globalThis, "window", {
     },
   },
 });
-delete (globalThis as { caches?: CacheStorage }).caches;
-assert.equal(supportsLocalKokoroRuntime(), false, "on-device Kokoro should require Cache API storage for large model files");
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: {
+    hardwareConcurrency: 4,
+    storage: {},
+  },
+});
+assert.equal(supportsLocalKokoroRuntime(), false, "on-device Piper should require OPFS storage for large voice files");
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: {
+    hardwareConcurrency: 4,
+    storage: {
+      getDirectory() {
+        return Promise.resolve(null);
+      },
+    },
+  },
+});
+assert.equal(supportsLocalKokoroRuntime(), true, "on-device Piper should accept browsers with Worker and OPFS support");
 if (originalWindowDescriptor) {
   Object.defineProperty(globalThis, "window", originalWindowDescriptor);
 } else {
   delete (globalThis as { window?: Window }).window;
 }
-if (originalCachesDescriptor) {
-  Object.defineProperty(globalThis, "caches", originalCachesDescriptor);
+if (originalNavigatorDescriptor) {
+  Object.defineProperty(globalThis, "navigator", originalNavigatorDescriptor);
 } else {
-  delete (globalThis as { caches?: CacheStorage }).caches;
+  delete (globalThis as { navigator?: Navigator }).navigator;
 }

@@ -4,6 +4,7 @@ import AdmZip from "adm-zip";
 import { XMLParser } from "fast-xml-parser";
 import { cacheDir, coversDir } from "@/lib/paths";
 import { paginateText } from "@/lib/book-cache";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import type { EnrichedMetadata } from "@/lib/metadata";
 
 export type ParsedBook = EnrichedMetadata & {
@@ -168,12 +169,7 @@ function htmlToText(html: string) {
     .replace(/<\/(p|div|h\d|li|section|article)>/gi, "\n\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
+    .replace(/&[^\s;]+;/g, (entity) => decodeHtmlEntities(entity))
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

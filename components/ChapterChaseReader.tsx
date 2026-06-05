@@ -11,15 +11,26 @@ import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
 import { defaultPiperVoiceId, resolvePiperVoiceId } from "@/lib/piper-voices";
+import { createPdfDocumentSource, getInitialPdfRenderEndPage } from "@/lib/pdf-reader";
+import {
+  getLocalKokoroInstallState,
+  normalizeTtsEngine,
+  shouldUseLocalKokoro,
+  supportsLocalKokoroRuntime,
+  streamLocalKokoroSpeech,
+  warmLocalKokoroTts,
+  type LocalSpeechChunkPayload,
+  type LocalSpeechStreamStart,
+  type TtsEngine,
+} from "@/lib/local-kokoro-tts";
+import { findActiveWordIndex, type WordTiming } from "@/lib/piper-sync";
 import {
   generatedSpeechWordTrackingEnabled,
-  normalizeTtsEngine,
   selectTtsChunkMaxCharacters,
   splitTextIntoTtsChunks,
   ttsChunkRequestTimeoutMs,
   ttsInitialRequestTimeoutMs,
   type TtsChunk,
-  type TtsEngine,
 } from "@/lib/tts-client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
@@ -43,7 +54,7 @@ type FlipPage = {
   loading?: boolean;
 };
 
-type PdfJsModule = typeof import("pdfjs-dist");
+type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
 type ReaderHighlight = {
   id: string;
@@ -89,6 +100,17 @@ type SpeakingWord = {
 type ReaderWordTracker = {
   pageIndex: number;
   nextWordIndex: number;
+};
+
+type LocalSpeechPlaybackState = {
+  startedAt: number;
+  scheduledUntil: number;
+  pageIndex: number;
+  wordOffset: number;
+  wordTimings: WordTiming[];
+  sourceNodes: Set<AudioBufferSourceNode>;
+  lastSource: AudioBufferSourceNode | null;
+  completed: boolean;
 };
 
 const readerThemes = new Set(["paper", "night", "scroll", "eink", "reseda", "deepsea"]);
@@ -231,6 +253,7 @@ export default function ChapterChaseReader({
   const speechAbortControllerRef = useRef<AbortController | null>(null);
   const speechProgressFrameRef = useRef<number | null>(null);
   const speechProgressMetaRef = useRef<{ pageIndex: number; wordCount: number; wordOffset: number } | null>(null);
+  const localSpeechPlaybackRef = useRef<LocalSpeechPlaybackState | null>(null);
   const speechChunkMetaRef = useRef<{ pageIndex: number; chunks: TtsChunk[]; index: number } | null>(null);
   const speechPrefetchRef = useRef<{ index: number; controller: AbortController; promise: Promise<Blob> } | null>(null);
   const activeSpeakingWordElementRef = useRef<HTMLElement | null>(null);
@@ -250,6 +273,7 @@ export default function ChapterChaseReader({
   const pageEnteredAtRef = useRef(0);
   const lastAnalyticsPageRef = useRef(pageIndex);
   const bionicReading = localReaderSettings.bionicReading;
+  const ttsEngine = localReaderSettings.ttsEngine;
   const readerShellStyle = useMemo(
     () =>
       ({
@@ -451,6 +475,26 @@ export default function ChapterChaseReader({
     setIsSpeechGenerating(false);
   }, []);
 
+  const clearLocalSpeechPlayback = useCallback(() => {
+    const playback = localSpeechPlaybackRef.current;
+    if (!playback) {
+      return;
+    }
+
+    playback.completed = true;
+    for (const source of playback.sourceNodes) {
+      source.onended = null;
+      try {
+        source.stop(0);
+      } catch {
+        // The source may already be stopped.
+      }
+      source.disconnect();
+    }
+
+    localSpeechPlaybackRef.current = null;
+  }, []);
+
   const setSpeakingProgressWord = useCallback((nextWord: SpeakingWord | null) => {
     setSpeakingWord((current) => {
       if (current?.pageIndex === nextWord?.pageIndex && current?.wordIndex === nextWord?.wordIndex) {
@@ -488,6 +532,31 @@ export default function ChapterChaseReader({
     [clearSpeechProgressTracking, setSpeakingProgressWord]
   );
 
+  const startTimedSpeechProgressTracking = useCallback(
+    (targetPageIndex: number, wordTimings: WordTiming[], wordOffset: number, getPlaybackMs: () => number) => {
+      clearSpeechProgressTracking();
+      if (!wordTimings.length) {
+        return;
+      }
+
+      const tick = () => {
+        const activeWordIndex = findActiveWordIndex(wordTimings, getPlaybackMs());
+        if (activeWordIndex >= 0) {
+          setSpeakingProgressWord({ pageIndex: targetPageIndex, wordIndex: wordOffset + activeWordIndex });
+        }
+
+        if (localSpeechPlaybackRef.current?.pageIndex === targetPageIndex && isReadingActiveRef.current) {
+          speechProgressFrameRef.current = window.requestAnimationFrame(tick);
+        } else {
+          speechProgressFrameRef.current = null;
+        }
+      };
+
+      tick();
+    },
+    [clearSpeechProgressTracking, setSpeakingProgressWord]
+  );
+
   const clearAutoAdvanceFallback = useCallback(() => {
     if (autoAdvanceFallbackTimerRef.current) {
       window.clearTimeout(autoAdvanceFallbackTimerRef.current);
@@ -499,6 +568,7 @@ export default function ChapterChaseReader({
   const cleanupCurrentSpeechAudio = useCallback(() => {
     clearAutoAdvanceFallback();
     clearSpeechProgressTracking();
+    clearLocalSpeechPlayback();
     if (speechTimerRef.current) {
       window.clearTimeout(speechTimerRef.current);
       speechTimerRef.current = null;
@@ -519,7 +589,10 @@ export default function ChapterChaseReader({
       URL.revokeObjectURL(speechAudioUrlRef.current);
       speechAudioUrlRef.current = null;
     }
-  }, [clearAutoAdvanceFallback, clearSpeechProgressTracking]);
+    if (audioContextRef.current?.state === "suspended") {
+      void audioContextRef.current.resume().catch(() => undefined);
+    }
+  }, [clearAutoAdvanceFallback, clearLocalSpeechPlayback, clearSpeechProgressTracking]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -768,16 +841,143 @@ export default function ChapterChaseReader({
       speechAbortControllerRef.current = controller;
 
       try {
-        const shouldTrackWords = generatedSpeechWordTrackingEnabled && !safePages[clampedPageIndex]?.image;
-        const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(false);
+        const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+        const shouldTrackWords = !safePages[clampedPageIndex]?.image && (shouldTryLocalTts || generatedSpeechWordTrackingEnabled);
+        const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(shouldTryLocalTts);
         const chunks = splitTextIntoTtsChunks(text, ttsChunkMaxCharacters).map((chunk) => (shouldTrackWords ? chunk : { ...chunk, wordCount: 0 }));
         speechChunkMetaRef.current = { pageIndex: clampedPageIndex, chunks, index: 0 };
 
-        const playChunk = async (chunkIndex: number) => {
+        const playLocalChunk = async (chunkIndex: number) => {
           const meta = speechChunkMetaRef.current;
           if (!meta || meta.pageIndex !== clampedPageIndex) return;
           if (chunkIndex >= meta.chunks.length) {
-            // Page finished
+            if (utteranceId !== utteranceIdRef.current) return;
+            if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
+              advanceReadingAfterSpeech(clampedPageIndex);
+            } else {
+              finishSpeechReading();
+            }
+            return;
+          }
+
+          meta.index = chunkIndex;
+          const chunk = meta.chunks[chunkIndex];
+          const context = audioContextRef.current;
+          if (!context) {
+            throw new Error("On-device speech could not start audio playback.");
+          }
+
+          setIsSpeechGenerating(true);
+          await new Promise<void>((resolve, reject) => {
+            let settled = false;
+
+            const rejectOnce = (error: unknown) => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              clearLocalSpeechPlayback();
+              reject(error);
+            };
+
+            const resolveIfFinished = () => {
+              const playback = localSpeechPlaybackRef.current;
+              if (!playback) {
+                if (!settled) {
+                  settled = true;
+                  resolve();
+                }
+                return;
+              }
+
+              if (playback.completed && playback.sourceNodes.size === 0) {
+                localSpeechPlaybackRef.current = null;
+                if (!settled) {
+                  settled = true;
+                  resolve();
+                }
+              }
+            };
+
+            const handleStreamStart = (payload: LocalSpeechStreamStart) => {
+              const startedAt = context.currentTime + 0.02;
+              localSpeechPlaybackRef.current = {
+                startedAt,
+                scheduledUntil: startedAt,
+                pageIndex: clampedPageIndex,
+                wordOffset: chunk.wordOffset,
+                wordTimings: payload.wordTimings,
+                sourceNodes: new Set(),
+                lastSource: null,
+                completed: false,
+              };
+
+              startTimedSpeechProgressTracking(clampedPageIndex, payload.wordTimings, chunk.wordOffset, () => {
+                const playback = localSpeechPlaybackRef.current;
+                if (!playback) {
+                  return 0;
+                }
+
+                return Math.max(0, (context.currentTime - playback.startedAt) * 1000);
+              });
+            };
+
+            const handleStreamChunk = (payload: LocalSpeechChunkPayload) => {
+              const playback = localSpeechPlaybackRef.current;
+              if (!playback || playback.pageIndex !== clampedPageIndex) {
+                return;
+              }
+
+              const startAt = Math.max(playback.scheduledUntil, context.currentTime + 0.01);
+              playback.startedAt = startAt - payload.startMs / 1000;
+              playback.scheduledUntil = startAt + payload.samples.length / payload.sampleRate;
+
+              const buffer = context.createBuffer(1, payload.samples.length, payload.sampleRate);
+              buffer.getChannelData(0).set(payload.samples);
+
+              const source = context.createBufferSource();
+              source.buffer = buffer;
+              source.connect(context.destination);
+              playback.sourceNodes.add(source);
+              playback.lastSource = source;
+              source.onended = () => {
+                playback.sourceNodes.delete(source);
+                if (playback.lastSource === source) {
+                  playback.lastSource = null;
+                }
+                source.disconnect();
+                resolveIfFinished();
+              };
+              source.start(startAt);
+            };
+
+            void streamLocalKokoroSpeech(
+              chunk.text,
+              ttsVoice,
+              {
+                signal: controller.signal,
+                onStart: handleStreamStart,
+                onChunk: handleStreamChunk,
+                onComplete: () => {
+                  const playback = localSpeechPlaybackRef.current;
+                  if (playback) {
+                    playback.completed = true;
+                  }
+                  resolveIfFinished();
+                },
+              }
+            ).catch(rejectOnce);
+          });
+
+          setIsSpeechGenerating(false);
+          if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
+          await playLocalChunk(chunkIndex + 1);
+        };
+
+        const playServerChunk = async (chunkIndex: number) => {
+          const meta = speechChunkMetaRef.current;
+          if (!meta || meta.pageIndex !== clampedPageIndex) return;
+          if (chunkIndex >= meta.chunks.length) {
             if (utteranceId !== utteranceIdRef.current) return;
             if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
               advanceReadingAfterSpeech(clampedPageIndex);
@@ -790,7 +990,6 @@ export default function ChapterChaseReader({
           meta.index = chunkIndex;
           const chunk = meta.chunks[chunkIndex];
 
-          // Use prefetched audio if available for this chunk; otherwise fetch now.
           setIsSpeechGenerating(true);
           let blob: Blob;
           const prefetch = speechPrefetchRef.current;
@@ -798,7 +997,7 @@ export default function ChapterChaseReader({
             blob = await prefetch.promise;
             speechPrefetchRef.current = null;
           } else {
-            blob = await fetchPreferredTtsAudioBlob(
+            blob = await fetchTtsAudioBlob(
               chunk.text,
               ttsVoice,
               controller.signal,
@@ -808,14 +1007,13 @@ export default function ChapterChaseReader({
 
           if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
 
-          // Prefetch the next chunk while this one plays.
           const nextIndex = chunkIndex + 1;
           if (nextIndex < meta.chunks.length && !speechPrefetchRef.current) {
             const nextController = new AbortController();
             speechPrefetchRef.current = {
               index: nextIndex,
               controller: nextController,
-              promise: fetchPreferredTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal, ttsChunkRequestTimeoutMs),
+              promise: fetchTtsAudioBlob(meta.chunks[nextIndex].text, ttsVoice, nextController.signal, ttsChunkRequestTimeoutMs),
             };
           } else if (nextIndex >= meta.chunks.length && clampedPageIndex < pageCount - 1) {
             void prefetchFirstTtsChunkForPage(clampedPageIndex + 1);
@@ -842,7 +1040,7 @@ export default function ChapterChaseReader({
           audio.onended = () => {
             if (utteranceId !== utteranceIdRef.current) return;
             if (!isReadingActiveRef.current) return;
-            void playChunk(chunkIndex + 1);
+            void playServerChunk(chunkIndex + 1);
           };
           audio.onerror = () => {
             if (utteranceId === utteranceIdRef.current) {
@@ -866,7 +1064,11 @@ export default function ChapterChaseReader({
           startSpeechProgressTracking(audio, clampedPageIndex, chunk.wordCount, chunk.wordOffset);
         };
 
-        await playChunk(0);
+        if (shouldTryLocalTts) {
+          await playLocalChunk(0);
+        } else {
+          await playServerChunk(0);
+        }
       } catch (error) {
         if (controller.signal.aborted || utteranceId !== utteranceIdRef.current) {
           return;
@@ -890,19 +1092,22 @@ export default function ChapterChaseReader({
       }
 
       const controller = new AbortController();
-      await fetchPreferredTtsAudioBlob(firstChunk.text, ttsVoice, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
+      await fetchTtsAudioBlob(firstChunk.text, ttsVoice, controller.signal, ttsChunkRequestTimeoutMs).catch(() => undefined);
     }
   }, [
     advanceReadingAfterSpeech,
     cleanupCurrentSpeechAudio,
     clearAutoAdvanceFallback,
+    clearLocalSpeechPlayback,
     extractPdfText,
     finishSpeechReading,
     isPdf,
     pageCount,
     safePages,
     speechSupported,
+    startTimedSpeechProgressTracking,
     startSpeechProgressTracking,
+    ttsEngine,
     ttsVoice,
   ]);
 
@@ -916,10 +1121,15 @@ export default function ChapterChaseReader({
     }
 
     const timer = window.setTimeout(() => {
+      const shouldWarmLocal = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
+      if (shouldWarmLocal) {
+        void warmLocalKokoroTts(ttsVoice).catch(() => warmPiperTts(ttsVoice));
+        return;
+      }
       warmPiperTts(ttsVoice);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [speechSupported, ttsVoice]);
+  }, [speechSupported, ttsEngine, ttsVoice]);
 
   useEffect(() => {
     if (!isPdf) {
@@ -927,7 +1137,6 @@ export default function ChapterChaseReader({
     }
 
     let cancelled = false;
-    let objectUrl: string | null = null;
     let loadedDocument: PDFDocumentProxy | null = null;
 
     async function loadPdf() {
@@ -936,12 +1145,11 @@ export default function ChapterChaseReader({
 
       try {
         const readableArea = getScrollReadableAreaSize();
-        const pdfjsLib: PdfJsModule = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+        const pdfjsLib: PdfJsModule = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
 
         const blob = localFileBlob ?? (await fetchBookFileBlob(bookId));
-        objectUrl = URL.createObjectURL(blob);
-        const pdf = await pdfjsLib.getDocument(objectUrl).promise;
+        const pdf = await pdfjsLib.getDocument(await createPdfDocumentSource(blob)).promise;
         loadedDocument = pdf;
 
         if (cancelled) {
@@ -951,7 +1159,7 @@ export default function ChapterChaseReader({
 
         setPdfDocument(pdf);
 
-        const firstBatch = await renderPdfPages(pdf, 1, Math.min(pdf.numPages, 4), readableArea);
+        const firstBatch = await renderPdfPages(pdf, 1, getInitialPdfRenderEndPage(pdf.numPages), readableArea);
         if (!cancelled) {
           setPdfPages(firstBatch);
         }
@@ -964,8 +1172,9 @@ export default function ChapterChaseReader({
         }
       } catch (error) {
         if (!cancelled) {
-          setPdfError(error instanceof Error ? error.message : "Unable to render PDF.");
-          setPdfPages([{ text: "", loading: true }]);
+          const message = error instanceof Error ? error.message : "Unable to render PDF.";
+          setPdfError(message);
+          setPdfPages([{ title: "PDF unavailable", text: `Unable to render PDF. ${message}` }]);
         }
       }
     }
@@ -974,9 +1183,6 @@ export default function ChapterChaseReader({
 
     return () => {
       cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
       void loadedDocument?.destroy();
     };
   }, [bookId, isPdf, localFileBlob]);
@@ -1182,14 +1388,41 @@ export default function ChapterChaseReader({
     }
 
     if (isReadingActive && !isSpeechPaused) {
-      // Only abort synthesis if we are still waiting for the next audio chunk.
-      if (isSpeechGenerating || !speechAudioRef.current) {
+      if (isSpeechGenerating && !localSpeechPlaybackRef.current) {
         speechAbortControllerRef.current?.abort();
+      }
+      if (localSpeechPlaybackRef.current) {
+        void audioContextRef.current?.suspend().catch(() => undefined);
       }
       speechAudioRef.current?.pause();
       isReadingActiveRef.current = false;
       setIsReadingActive(false);
       setIsSpeechPaused(true);
+      return;
+    }
+
+    const localPlayback = localSpeechPlaybackRef.current;
+    if (localPlayback) {
+      void audioContextRef.current
+        ?.resume()
+        .then(() => {
+          startTimedSpeechProgressTracking(localPlayback.pageIndex, localPlayback.wordTimings, localPlayback.wordOffset, () => {
+            const playback = localSpeechPlaybackRef.current;
+            const context = audioContextRef.current;
+            if (!playback || !context) {
+              return 0;
+            }
+
+            return Math.max(0, (context.currentTime - playback.startedAt) * 1000);
+          });
+        })
+        .catch((error: unknown) => {
+          setSpeechError(error instanceof Error ? error.message : "Unable to resume speech.");
+          finishSpeechReading();
+        });
+      isReadingActiveRef.current = true;
+      setIsReadingActive(true);
+      setIsSpeechPaused(false);
       return;
     }
 
@@ -2142,16 +2375,6 @@ function getSpeechPlaybackPrompt(error: unknown) {
   }
   return error instanceof Error ? error.message : "Press Play to start generated speech.";
 }
-
-async function fetchPreferredTtsAudioBlob(
-  text: string,
-  voiceId: string,
-  signal: AbortSignal,
-  timeoutMs = ttsChunkRequestTimeoutMs
-): Promise<Blob> {
-  return fetchTtsAudioBlob(text, voiceId, signal, timeoutMs);
-}
-
 async function fetchTtsAudioBlob(text: string, voiceId: string, signal: AbortSignal, timeoutMs = ttsChunkRequestTimeoutMs): Promise<Blob> {
   const body = JSON.stringify({ text, voiceId });
   const requestController = new AbortController();

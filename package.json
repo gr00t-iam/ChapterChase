@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:client-runtime": "tsx scripts/test-client-runtime.ts",
+    "test:piper-sync": "tsx scripts/test-piper-sync.ts",
+    "test:reader-regressions": "tsx scripts/test-reader-regressions.ts",
     "test:build-trace": "tsx scripts/test-build-trace.ts",
     "test:settings-layout": "tsx scripts/test-settings-layout.ts",
     "test:settings-content": "tsx scripts/test-settings-content.ts",
@@ -20,6 +22,7 @@
     "duplicates": "tsx scripts/find-duplicates.ts"
   },
   "dependencies": {
+    "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@prisma/client": "^5.22.0",
     "@tanstack/react-virtual": "^3.13.24",
     "@types/nodemailer": "^8.0.0",
