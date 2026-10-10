@@ -110,7 +110,13 @@ struct ReaderWebView: UIViewRepresentable {
                 if parent.controller.reading { parent.controller.command("read") }
             case "text": parent.controller.speak(body["text"] as? String ?? "")
             case "end": parent.controller.stop()
-            case "error": parent.controller.error = body["message"] as? String ?? "Unable to open book."
+            case "error":
+                parent.controller.error = body["message"] as? String ?? "Unable to open book."
+                #if targetEnvironment(simulator)
+                if let diagnostic = try? JSONSerialization.data(withJSONObject: body, options: .prettyPrinted) {
+                    try? diagnostic.write(to: parent.directory.appendingPathComponent("reader-error.json"))
+                }
+                #endif
             default: break
             }
         }

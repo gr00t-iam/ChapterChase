@@ -46,6 +46,11 @@ jobs:
           xcrun simctl launch "$DEVICE" app.chapterchase.reader --reader-smoke
           sleep 8
           xcrun simctl io "$DEVICE" screenshot release/iPhone-reader.png
+          if [ -f "$CONTAINER/Documents/Books/reader-error.json" ]; then
+            cp "$CONTAINER/Documents/Books/reader-error.json" release/
+            cat release/reader-error.json
+            exit 1
+          fi
       - name: Package sideloading artifacts
         run: |
           mkdir -p release/Payload
@@ -57,6 +62,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent ios/build/simulator/Build/Products/Release-iphonesimulator/ChapterChase.app release/ChapterChase-simulator.zip
           zip -qr release/ChapterChase-Xcode-project.zip ios -x 'ios/build/*'
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: apple-preview
           path: release/*

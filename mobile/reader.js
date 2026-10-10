@@ -109,7 +109,7 @@ function mount(index) {
   flip.loadFromHTML(nodes);
   box.dataset.orientation = flip.getOrientation();
 }
-function fail(error) { status.hidden = false; status.textContent = "Unable to open book."; send({ type: "error", message: String(error.message ?? error) }); }
+function fail(error) { status.hidden = false; status.textContent = "Unable to open book."; send({ type: "error", message: String(error.message ?? error), stack: String(error.stack ?? "") }); }
 
 window.ChapterChase = {
   async openBook(options) {
