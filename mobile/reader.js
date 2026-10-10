@@ -100,13 +100,14 @@ function mount(index) {
     box.append(page); return page;
   });
   const { width, height } = dimensions();
-  flip = new PageFlip(box, { width, height, size: "stretch", minWidth: 100, maxWidth: width, minHeight: 100, maxHeight: height, drawShadow: true, flippingTime: 1000, showCover: true, useMouseTouch: true, usePortrait: true, startPage: Math.min(index, pages.length - 1) });
+  flip = new PageFlip(box, { width, height, size: "stretch", minWidth: width, maxWidth: width, minHeight: 100, maxHeight: height, drawShadow: true, flippingTime: 1000, showCover: true, useMouseTouch: true, usePortrait: true, startPage: Math.min(index, pages.length - 1) });
   flip.on("flip", event => {
     const page = event.data;
     if (pdf) void preparePDF(page).catch(fail);
     send({ type: "progress", page, percent: pages.length > 1 ? page / (pages.length - 1) * 100 : 100 });
   });
   flip.loadFromHTML(nodes);
+  box.dataset.orientation = flip.getOrientation();
 }
 function fail(error) { status.hidden = false; status.textContent = "Unable to open book."; send({ type: "error", message: String(error.message ?? error) }); }
 

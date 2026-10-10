@@ -29,12 +29,13 @@ app.whenReady().then(async () => {
       const result = await window.webContents.executeJavaScript(`(async () => {
         await ChapterChase.read();
         const page=document.querySelector('.page-text');
-        return { count:document.querySelectorAll('.page-text').length, text:messages.find(item=>item.type==='text')?.text, status:document.getElementById('status').hidden, overflow:getComputedStyle(page).overflow };
+        return { count:document.querySelectorAll('.page-text').length, text:messages.find(item=>item.type==='text')?.text, status:document.getElementById('status').hidden, overflow:getComputedStyle(page).overflow, orientation:document.querySelector('.book-container').dataset.orientation };
       })()`);
       assert.ok(result.count > 4, JSON.stringify(result));
       assert.ok(result.text.includes("library travels"), JSON.stringify(result));
       assert.equal(result.status, true);
       assert.equal(result.overflow, "hidden");
+      assert.equal(result.orientation, width > height ? "landscape" : "portrait");
       console.log(`PASS offline EPUB pagination and speech extraction at ${width}x${height}`);
       await window.webContents.executeJavaScript(`ChapterChase.openBook(${JSON.stringify({ data: pdfFixture(), format: "pdf", pageIndex: 0 })})`);
       const pdf = await window.webContents.executeJavaScript(`(async () => { await ChapterChase.read(); return { image:document.querySelector('.page-image')?.src, text:messages.filter(item=>item.type==='text').at(-1)?.text }; })()`);
