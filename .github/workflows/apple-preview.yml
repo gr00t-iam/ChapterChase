@@ -33,6 +33,12 @@ jobs:
           sleep 5
           mkdir -p release
           xcrun simctl io "$DEVICE" screenshot release/iPhone-library.png
+          xcrun simctl terminate "$DEVICE" app.chapterchase.reader
+          CONTAINER=$(xcrun simctl get_app_container "$DEVICE" app.chapterchase.reader data)
+          node scripts/create-mobile-smoke-fixture.mjs "$CONTAINER"
+          xcrun simctl launch "$DEVICE" app.chapterchase.reader --reader-smoke
+          sleep 8
+          xcrun simctl io "$DEVICE" screenshot release/iPhone-reader.png
       - name: Package sideloading artifacts
         run: |
           mkdir -p release/Payload

@@ -13,6 +13,7 @@ struct LibraryView: View {
     @EnvironmentObject var library: LibraryStore
     @State private var importing = false
     @State private var connecting = false
+    @State private var smokeReader = false
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -51,6 +52,14 @@ struct LibraryView: View {
                 do { try library.importFile(result.get()) } catch { library.error = error.localizedDescription }
             }
             .sheet(isPresented: $connecting) { NASView().environmentObject(library) }
+            .navigationDestination(isPresented: $smokeReader) {
+                if let book = library.books.first { ReaderView(book: book).environmentObject(library) }
+            }
+            .onAppear {
+                #if targetEnvironment(simulator)
+                if ProcessInfo.processInfo.arguments.contains("--reader-smoke") { smokeReader = true }
+                #endif
+            }
             .alert("ChapterChase", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
                 Button("OK") { library.error = nil }
             } message: { Text(library.error ?? "") }
