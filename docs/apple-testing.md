@@ -33,6 +33,25 @@ The supported free-account route uses your Mac:
 8. Repeat for your other device. Free Personal Team provisioning expires after
    seven days, so rebuild/install again when the signing profile expires.
 
+## Windows sideloading option
+
+AltStore Classic can re-sign the unsigned IPA with your own free Apple ID.
+Follow its current official Windows setup instructions:
+https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
+
+1. Install the Apple iTunes/iCloud components required by that guide and
+   AltServer from https://altstore.io/. Do not use unofficial installers.
+2. Connect and trust your iPhone/iPad, then install AltStore using AltServer.
+3. Download `ChapterChase-unsigned.ipa` to the device's Files app.
+4. In AltStore's My Apps tab, tap + and select the IPA to sign and install it.
+5. Enable Developer Mode/trust if requested. Refresh the app through AltServer
+   before its seven-day free-account signing expires.
+
+This is a third-party installation option, not a tested ChapterChase installer.
+Enter Apple credentials only into the signing tool you have chosen, never into
+ChapterChase or GitHub. Re-signing still requires connectivity to Apple; an
+expired signing profile can stop the app opening even though books are offline.
+
 ## Connect to NAS
 
 Update the NAS server from the same repository so `/api/mobile/library` exists.

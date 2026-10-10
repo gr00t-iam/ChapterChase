@@ -10,9 +10,9 @@ targets:
     sources:
       - path: ChapterChase
         excludes: [Reader]
-    resources:
       - path: ChapterChase/Reader
         type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.chapterchase.reader
