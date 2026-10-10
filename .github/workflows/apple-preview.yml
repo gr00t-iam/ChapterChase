@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: node scripts/build-mobile-reader.mjs
       - run: brew install xcodegen
       - run: xcodegen generate --spec ios/project.yml
@@ -23,6 +23,16 @@ jobs:
         run: xcodebuild -project ios/ChapterChase.xcodeproj -scheme ChapterChase -sdk iphonesimulator -configuration Release -derivedDataPath ios/build/simulator CODE_SIGNING_ALLOWED=NO build
       - name: Build unsigned device app
         run: xcodebuild -project ios/ChapterChase.xcodeproj -scheme ChapterChase -sdk iphoneos -configuration Release -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Launch simulator smoke test
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries | map(select(.key | contains("iOS"))) | .[0].value | .[0].udid')
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" ios/build/simulator/Build/Products/Release-iphonesimulator/ChapterChase.app
+          xcrun simctl launch "$DEVICE" app.chapterchase.reader
+          sleep 5
+          mkdir -p release
+          xcrun simctl io "$DEVICE" screenshot release/iPhone-library.png
       - name: Package sideloading artifacts
         run: |
           mkdir -p release/Payload
@@ -59,6 +69,7 @@ jobs:
       - run: npm run desktop:prepare
       - run: node scripts/test-desktop-runtime.mjs
       - run: npm ci --prefix desktop
+      - run: desktop/node_modules/.bin/electron scripts/test-mobile-reader.cjs
       - run: npx --prefix desktop electron-builder --projectDir desktop --mac --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

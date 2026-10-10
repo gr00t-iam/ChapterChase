@@ -1,7 +1,7 @@
 import { PageFlip } from "page-flip";
 import JSZip from "jszip";
-import * as pdfjs from "pdfjs-dist/build/pdf.mjs";
-import * as pdfWorker from "pdfjs-dist/build/pdf.worker.mjs";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
+import * as pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs";
 
 // WKWebView file resources cannot reliably spawn module workers. PDF.js supports
 // its in-process worker transport, keeping all book processing offline.
