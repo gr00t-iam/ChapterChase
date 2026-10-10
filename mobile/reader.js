@@ -70,9 +70,19 @@ async function renderPDF(index) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
       await page.render({ canvasContext: canvas.getContext("2d"), canvas, viewport }).promise;
-      const text = await page.getTextContent();
+      // Older iOS WebKit lacks ReadableStream's async iterator, which PDF.js's
+      // getTextContent uses. Consume its public text stream explicitly instead.
+      const reader = page.streamTextContent().getReader();
+      const items = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          items.push(...value.items);
+        }
+      } finally { reader.releaseLock(); }
       if (version !== revision) return;
-      record.text = text.items.map(item => item.str ?? "").join(" ");
+      record.text = items.map(item => item.str ?? "").join(" ");
       record.image.src = canvas.toDataURL("image/jpeg", 0.9);
       record.rendered = true;
       page.cleanup();

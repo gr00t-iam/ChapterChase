@@ -57,6 +57,10 @@ final class ReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDel
         } catch { self.error = error.localizedDescription; reading = false }
     }
     func stop() { reading = false; synthesizer.stopSpeaking(at: .immediate) }
+    func pageChanged() {
+        synthesizer.stopSpeaking(at: .immediate)
+        if reading { command("read") }
+    }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in if reading { command("next") } }
     }
@@ -107,7 +111,7 @@ struct ReaderWebView: UIViewRepresentable {
                 } catch { parent.controller.error = error.localizedDescription }
             case "progress":
                 parent.progress(body["page"] as? Int ?? 0, body["percent"] as? Double ?? 0)
-                if parent.controller.reading { parent.controller.command("read") }
+                parent.controller.pageChanged()
             case "text": parent.controller.speak(body["text"] as? String ?? "")
             case "end": parent.controller.stop()
             case "error":

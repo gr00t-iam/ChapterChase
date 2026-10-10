@@ -23,6 +23,9 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: node scripts/build-mobile-reader.mjs
+      - run: npx playwright install webkit
+      - run: node scripts/create-mobile-smoke-fixture.mjs ios/build/webkit-fixture
+      - run: node scripts/test-mobile-webkit.mjs playwright ios/build/webkit-fixture
       - run: brew install xcodegen
       - run: xcodegen generate --spec ios/project.yml
       - name: Build iPhone and iPad simulator

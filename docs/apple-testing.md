@@ -77,6 +77,11 @@ The Apple Preview GitHub workflow builds simulator and unsigned device apps
 plus Intel/Apple Silicon desktop DMGs. Generated reader resources and Xcode
 projects are bundled into the testing archive, not committed.
 
+The workflow tests offline PDF rendering in WebKit with asynchronous stream
+iteration disabled (matching older iOS), then opens a local PDF in the native
+iPhone simulator. Simulator reader errors fail the build and are retained as
+diagnostic artifacts.
+
 ## Device acceptance tests
 
 Import EPUB and PDF; reopen after force-quit; rotate portrait/landscape; flip
