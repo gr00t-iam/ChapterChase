@@ -144,7 +144,12 @@ window.ChapterChase = {
     } catch (error) { fail(error); }
   },
   previous() { flip?.flipPrev(); },
-  next() { if (!flip) return; if (flip.getCurrentPageIndex() >= pages.length - 1) send({ type: "end" }); else flip.flipNext(); },
+  next() {
+    if (!flip) return;
+    const index = flip.getCurrentPageIndex();
+    const spread = flip.getOrientation() === "landscape" && index > 0 ? 2 : 1;
+    if (index + spread >= pages.length) send({ type: "end" }); else flip.flipNext();
+  },
   async read() {
     const request = ++readingRequest;
     try {

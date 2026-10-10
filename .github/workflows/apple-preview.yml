@@ -69,6 +69,7 @@ jobs:
       - run: npm run desktop:prepare
       - run: node scripts/test-desktop-runtime.mjs
       - run: npm ci --prefix desktop
+      - run: node scripts/build-mobile-reader.mjs
       - run: desktop/node_modules/.bin/electron scripts/test-mobile-reader.cjs
       - run: npx --prefix desktop electron-builder --projectDir desktop --mac --${{ matrix.arch }} --publish never
         env:
