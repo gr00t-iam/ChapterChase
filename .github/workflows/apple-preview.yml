@@ -1,6 +1,11 @@
 name: Apple Preview
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        options: [both, ios, mac]
+        default: both
   push:
     branches: [main]
     paths: ['ios/**', 'mobile/**', 'scripts/build-mobile-reader.mjs', '.github/workflows/apple-preview.yml']
@@ -8,6 +13,7 @@ permissions:
   contents: read
 jobs:
   ios:
+    if: github.event_name != 'workflow_dispatch' || inputs.target != 'mac'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +30,7 @@ jobs:
       - name: Build unsigned device app
         run: xcodebuild -project ios/ChapterChase.xcodeproj -scheme ChapterChase -sdk iphoneos -configuration Release -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build
       - name: Launch simulator smoke test
+        timeout-minutes: 12
         run: |
           DEVICE=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries | map(select(.key | contains("iOS"))) | .[0].value | .[0].udid')
           xcrun simctl boot "$DEVICE" || true
@@ -54,6 +61,7 @@ jobs:
           name: apple-preview
           path: release/*
   mac:
+    if: github.event_name != 'workflow_dispatch' || inputs.target != 'ios'
     strategy:
       fail-fast: false
       matrix:

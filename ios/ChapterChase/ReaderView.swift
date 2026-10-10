@@ -37,7 +37,7 @@ final class ReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDel
     weak var webView: WKWebView?
     private let synthesizer = AVSpeechSynthesizer()
     override init() { super.init(); synthesizer.delegate = self }
-    func command(_ name: String) { webView?.evaluateJavaScript("ChapterChase.\(name)()", completionHandler: nil) }
+    func command(_ name: String) { webView?.evaluateJavaScript("void ChapterChase.\(name)()", completionHandler: nil) }
     func toggleSpeech() {
         if reading { reading = false; synthesizer.pauseSpeaking(at: .immediate); return }
         reading = true
@@ -100,7 +100,7 @@ struct ReaderWebView: UIViewRepresentable {
                     let data = try Data(contentsOf: parent.directory.appendingPathComponent(parent.book.fileName))
                     let options: [String: Any] = ["data": data.base64EncodedString(), "format": parent.book.format, "pageIndex": parent.book.pageIndex, "percent": parent.book.percent]
                     let json = try JSONSerialization.data(withJSONObject: options)
-                    let script = "ChapterChase.openBook(\(String(decoding: json, as: UTF8.self)))"
+                    let script = "void ChapterChase.openBook(\(String(decoding: json, as: UTF8.self)))"
                     parent.controller.webView?.evaluateJavaScript(script) { _, error in
                         if let error { self.parent.controller.error = error.localizedDescription }
                     }
