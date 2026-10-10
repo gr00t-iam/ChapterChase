@@ -15,19 +15,21 @@ let speechProcess;
 function stopDesktopSpeech() {
   const previous = speechProcess;
   speechProcess = undefined;
+  if (previous && process.platform === "darwin") previous.kill("SIGCONT");
   previous?.kill();
 }
 
 ipcMain.handle("desktop:speak", async (event, text) => {
-  if (event.sender !== localWindow?.webContents || process.platform !== "win32") throw new Error("Speech unavailable.");
+  if (event.sender !== localWindow?.webContents || !["win32", "darwin"].includes(process.platform)) throw new Error("Speech unavailable.");
   if (typeof text !== "string" || !text.trim() || text.length > 100000) throw new Error("Invalid speech text.");
   stopDesktopSpeech();
   const controlPath = path.join(app.getPath("userData"), `speech-${require("node:crypto").randomUUID()}.txt`);
   const script = app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", "speech.ps1") : path.join(__dirname, "speech.ps1");
-  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
+  const child = process.platform === "darwin" ? spawn("/usr/bin/say", ["-f", "-"], { stdio: ["pipe", "ignore", "pipe"] }) : spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
     windowsHide: true, env: { ...process.env, CHAPTERCHASE_SPEECH_TEXT: Buffer.from(text).toString("base64"), CHAPTERCHASE_SPEECH_CONTROL: controlPath },
     stdio: ["ignore", "ignore", "pipe"],
   });
+  if (process.platform === "darwin") child.stdin.end(text);
   speechProcess = child;
   child.controlPath = controlPath;
   let errorText = "";
@@ -39,13 +41,16 @@ ipcMain.handle("desktop:speak", async (event, text) => {
       const cancelled = speechProcess !== child;
       if (!cancelled) speechProcess = undefined;
       if (code === 0 || cancelled) resolve();
-      else reject(new Error(errorText || "Windows speech failed."));
+      else reject(new Error(errorText || "System speech failed."));
     });
   });
 });
 ipcMain.on("desktop:speech-control", (event, command) => {
   if (event.sender !== localWindow?.webContents) return;
   if (command === "stop") stopDesktopSpeech();
+  else if (process.platform === "darwin" && ["pause", "resume"].includes(command)) {
+    speechProcess?.kill(command === "pause" ? "SIGSTOP" : "SIGCONT");
+  }
   else if (["pause", "resume"].includes(command) && speechProcess?.controlPath) {
     fsSync.writeFileSync(speechProcess.controlPath, command);
   }

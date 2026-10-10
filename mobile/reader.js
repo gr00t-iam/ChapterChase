@@ -137,7 +137,8 @@ window.ChapterChase = {
         }
         pages = paginate();
       }
-      const index = Math.min(pages.length - 1, options.pageIndex ?? 0);
+      const savedIndex = pdf ? options.pageIndex ?? 0 : Math.round((options.percent ?? 0) / 100 * Math.max(0, pages.length - 1));
+      const index = Math.min(pages.length - 1, Math.max(0, savedIndex));
       mount(index);
       if (pdf) await preparePDF(index);
       status.hidden = true;
