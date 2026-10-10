@@ -1,0 +1,68 @@
+name: Apple Preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['ios/**', 'mobile/**', 'scripts/build-mobile-reader.mjs', '.github/workflows/apple-preview.yml']
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-mobile-reader.mjs
+      - run: brew install xcodegen
+      - run: xcodegen generate --spec ios/project.yml
+      - name: Build iPhone and iPad simulator
+        run: xcodebuild -project ios/ChapterChase.xcodeproj -scheme ChapterChase -sdk iphonesimulator -configuration Release -derivedDataPath ios/build/simulator CODE_SIGNING_ALLOWED=NO build
+      - name: Build unsigned device app
+        run: xcodebuild -project ios/ChapterChase.xcodeproj -scheme ChapterChase -sdk iphoneos -configuration Release -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Package sideloading artifacts
+        run: |
+          mkdir -p release/Payload
+          cp -R ios/build/device/Build/Products/Release-iphoneos/ChapterChase.app release/Payload/
+          cd release
+          zip -qr ChapterChase-unsigned.ipa Payload
+          rm -r Payload
+          cd ..
+          ditto -c -k --sequesterRsrc --keepParent ios/build/simulator/Build/Products/Release-iphonesimulator/ChapterChase.app release/ChapterChase-simulator.zip
+          zip -qr release/ChapterChase-Xcode-project.zip ios -x 'ios/build/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple-preview
+          path: release/*
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run desktop:prepare
+      - run: node scripts/test-desktop-runtime.mjs
+      - run: npm ci --prefix desktop
+      - run: npx --prefix desktop electron-builder --projectDir desktop --mac --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: desktop/dist/*.dmg

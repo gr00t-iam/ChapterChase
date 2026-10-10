@@ -11,6 +11,7 @@ import { updateLocalLibraryProgress } from "@/lib/local-library";
 import { getOfflineBook } from "@/lib/offline-library";
 import { cacheCurrentReading, cacheWantToReadList, postProgress, syncPendingProgress } from "@/lib/offline-client";
 import { defaultPiperVoiceId, resolvePiperVoiceId } from "@/lib/piper-voices";
+import { getDesktopSpeech } from "@/lib/desktop-speech";
 import { createPdfDocumentSource, getInitialPdfRenderEndPage } from "@/lib/pdf-reader";
 import {
   getLocalKokoroInstallState,
@@ -566,6 +567,7 @@ export default function ChapterChaseReader({
   }, []);
 
   const cleanupCurrentSpeechAudio = useCallback(() => {
+    getDesktopSpeech()?.stop();
     clearAutoAdvanceFallback();
     clearSpeechProgressTracking();
     clearLocalSpeechPlayback();
@@ -841,6 +843,18 @@ export default function ChapterChaseReader({
       speechAbortControllerRef.current = controller;
 
       try {
+        const desktopSpeech = getDesktopSpeech();
+        if (desktopSpeech) {
+          setIsSpeechGenerating(false);
+          await desktopSpeech.speak(text);
+          if (utteranceId !== utteranceIdRef.current || controller.signal.aborted) return;
+          if (isReadingActiveRef.current && clampedPageIndex < pageCount - 1) {
+            advanceReadingAfterSpeech(clampedPageIndex);
+          } else {
+            finishSpeechReading();
+          }
+          return;
+        }
         const shouldTryLocalTts = shouldUseLocalKokoro(ttsEngine, getLocalKokoroInstallState()) && supportsLocalKokoroRuntime();
         const shouldTrackWords = !safePages[clampedPageIndex]?.image && (shouldTryLocalTts || generatedSpeechWordTrackingEnabled);
         const ttsChunkMaxCharacters = selectTtsChunkMaxCharacters(shouldTryLocalTts);
@@ -1126,7 +1140,7 @@ export default function ChapterChaseReader({
         void warmLocalKokoroTts(ttsVoice).catch(() => warmPiperTts(ttsVoice));
         return;
       }
-      warmPiperTts(ttsVoice);
+      if (!getDesktopSpeech()) warmPiperTts(ttsVoice);
     }, 650);
     return () => window.clearTimeout(timer);
   }, [speechSupported, ttsEngine, ttsVoice]);
@@ -1388,6 +1402,7 @@ export default function ChapterChaseReader({
     }
 
     if (isReadingActive && !isSpeechPaused) {
+      getDesktopSpeech()?.pause();
       if (isSpeechGenerating && !localSpeechPlaybackRef.current) {
         speechAbortControllerRef.current?.abort();
       }
@@ -1402,6 +1417,14 @@ export default function ChapterChaseReader({
     }
 
     const localPlayback = localSpeechPlaybackRef.current;
+    const desktopSpeech = getDesktopSpeech();
+    if (desktopSpeech && isSpeechPaused) {
+      desktopSpeech.resume();
+      isReadingActiveRef.current = true;
+      setIsReadingActive(true);
+      setIsSpeechPaused(false);
+      return;
+    }
     if (localPlayback) {
       void audioContextRef.current
         ?.resume()
@@ -1456,7 +1479,7 @@ export default function ChapterChaseReader({
   const toggleToolbarCollapsed = useCallback(() => {
     setIsToolbarCollapsed((current) => {
       const next = !current;
-      window.localStorage.setItem(readerToolbarCollapsedStorageKey, JSON.stringify(next));
+      window.localStorage.setItem(getDesktopSpeech() ? `${readerToolbarCollapsedStorageKey}:desktop` : readerToolbarCollapsedStorageKey, JSON.stringify(next));
       window.requestAnimationFrame(() => pageFlipRef.current?.update());
       return next;
     });
@@ -2303,7 +2326,7 @@ function loadToolbarCollapsed() {
   }
 
   try {
-    const stored = window.localStorage.getItem(readerToolbarCollapsedStorageKey);
+    const stored = window.localStorage.getItem(getDesktopSpeech() ? `${readerToolbarCollapsedStorageKey}:desktop` : readerToolbarCollapsedStorageKey);
     if (stored !== null) {
       return JSON.parse(stored) === true;
     }
@@ -2311,7 +2334,7 @@ function loadToolbarCollapsed() {
     return window.matchMedia("(max-width: 780px)").matches;
   }
 
-  return window.matchMedia("(max-width: 780px)").matches;
+  return Boolean(getDesktopSpeech()) || window.matchMedia("(max-width: 780px)").matches;
 }
 
 function saveReaderTextSettings(settings: ReaderTextSettings) {

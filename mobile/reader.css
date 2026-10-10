@@ -1,0 +1,9 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #171717; }
+#stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.book-container { margin: auto; }
+.page { background: #f8f7f3; color: #171717; overflow: hidden; }
+.page-text { font: 18px/1.6 Georgia, serif; padding: 24px; height: 100%; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-image { width: 100%; height: 100%; object-fit: contain; display: block; }
+#status { position: absolute; inset: 0; display: grid; place-items: center; color: white; font: 16px system-ui; z-index: 20; }
+#status[hidden] { display: none; }

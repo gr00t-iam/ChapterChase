@@ -1,0 +1,25 @@
+{
+  "name": "chapterchase-desktop",
+  "version": "0.2.0",
+  "description": "ChapterChase offline desktop reader",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "app.chapterchase.desktop",
+    "productName": "ChapterChase",
+    "files": ["main.cjs", "connect.html", "preload.cjs", "speech.ps1"],
+    "asarUnpack": ["speech.ps1"],
+    "extraResources": [{ "from": "runtime", "to": "runtime" }],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" }
+  }
+}

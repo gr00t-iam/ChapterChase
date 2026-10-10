@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-export async function GET(_request: Request, { params }: RouteContext<"/api/books/[id]/file">) {
+export async function GET(request: Request, { params }: RouteContext<"/api/books/[id]/file">) {
   await requireUser();
   const { id } = await params;
   const book = await prisma.book.findUnique({ where: { id }, select: { filePath: true, format: true } });
 
-  if (!book || book.format !== "PDF") {
+  if (!book || !["PDF", "EPUB"].includes(book.format)) {
     notFound();
   }
 
@@ -17,8 +17,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/api/book
   const fileName = path.basename(book.filePath);
   return new Response(data, {
     headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(fileName)}"`,
+      "Content-Type": book.format === "PDF" ? "application/pdf" : "application/epub+zip",
+      "Content-Disposition": `${new URL(request.url).searchParams.has("download") ? "attachment" : "inline"}; filename="${encodeURIComponent(fileName)}"`,
       "Cache-Control": "private, max-age=3600",
     },
   });

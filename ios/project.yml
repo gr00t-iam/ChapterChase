@@ -1,0 +1,28 @@
+name: ChapterChase
+options:
+  bundleIdPrefix: app.chapterchase
+  deploymentTarget:
+    iOS: "16.4"
+targets:
+  ChapterChase:
+    type: application
+    platform: iOS
+    sources:
+      - path: ChapterChase
+        excludes: [Reader]
+    resources:
+      - path: ChapterChase/Reader
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.chapterchase.reader
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ChapterChase
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"

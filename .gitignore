@@ -21,6 +21,9 @@
 /build
 /data
 /library
+/desktop/node_modules/
+/desktop/runtime/
+/desktop/dist/
 /kokoro-en-v0_19.tar/
 /kokoro-en-v0_19.tar
 /kokoro-en-v0_19.tar.bz2
@@ -49,3 +52,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/ios/ChapterChase/Reader/
+/ios/*.xcodeproj/
+/ios/build/
