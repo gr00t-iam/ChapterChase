@@ -9,7 +9,7 @@
 - [x] Library and reader: write browser fixture tests first; implement imports, metadata, local progress, search, deletion and optional NAS link. Bundle no remote dependencies.
 - [x] Offline lifecycle: test repository subpath, cache installation, restart without network and non-destructive updates; implement scoped worker and explicit update control.
 - [x] Reliability: test malformed imports, quota errors, speech cancellation, sizing and persistence in Chromium/WebKit; verify existing native reader regressions.
-- [ ] Publication: add install docs, Pages workflow and separate ZIP release; verify the live HTTPS page and keep existing application releases unchanged.
+- [x] Publication: add install docs, Pages workflow and separate ZIP release; verify the live HTTPS page and keep existing application releases unchanged.
 
 ## Interfaces
 
@@ -33,3 +33,10 @@ Browser gates passed in Chromium and WebKit, including quota failure, explicit u
 Ruling: keep progress in a separate IndexedDB table to avoid rewriting blob records on WebKit. PWA-only dependency aliases select patched PDF.js 6.4.299 and Sharp 0.35.5 without upgrading existing native/server PDF.js. Build traces reject older PDF.js in the PWA output. Configured environment credentials were checked against the generated static assets; none were included.
 
 Ruling: add Download Original File to the NAS book menu because its existing Download for Offline action stores a browser copy rather than exporting to Files. Physical NAS retrieval remains a user acceptance check.
+
+## Published Verification
+
+- GitHub Actions run `38086016962` passed build, lint, download URL tests, speech tests, Chromium/WebKit browser gates and Pages deployment for `678efdc`.
+- Live site: https://gr00t-iam.github.io/ChapterChase/ . A fresh Chromium profile imported an EPUB, flipped a page, closed completely, then reopened the deployed site offline and restored the saved page without browser errors.
+- Release: https://github.com/gr00t-iam/ChapterChase/releases/tag/v0.3.0-pwa-preview . The CI-built static ZIP contains only the app shell, reader, textures, icons, manifest, worker and dependency licenses.
+- Existing Windows and Apple release asset lists were checked and retained. Physical Apple installation, actual speech audio and live NAS retrieval are not claimed as verified.
