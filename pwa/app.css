@@ -1,0 +1,90 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; color: #ecefed; background: #171919; --sidebar-width: 212px; }
+* { box-sizing: border-box; letter-spacing: 0; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; }
+button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #414545; border-radius: 4px; padding: 9px 12px; background: #272c2b; color: inherit; cursor: pointer; }
+button:hover { background: #37423e; }
+button:disabled { opacity: .5; cursor: wait; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #67d8b2; outline-offset: 3px; }
+svg { width: 19px; height: 19px; flex-shrink: 0; }
+input, select { color: inherit; background: #252928; border: 1px solid #454b48; padding: 9px; border-radius: 4px; min-width: 0; }
+.icon-button { width: 38px; height: 38px; padding: 8px; flex-shrink: 0; }
+.primary { background: #278362; border-color: #278362; white-space: nowrap; }
+.app-header { height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #101313; border-bottom: 1px solid #333; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 650; text-decoration: none; color: #eff7f1; }
+.brand svg { color: #68c9a3; }
+.header-status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b6c3bb; }
+.app-layout { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: calc(100dvh - 60px); transition: grid-template-columns .3s ease; }
+#sidebar { display: flex; flex-direction: column; overflow: hidden; background: #171c1a; border-right: 1px solid #363a37; }
+#sidebar nav { padding: 14px 8px; }
+.nav-item { width: 100%; justify-content: flex-start; border: 0; background: transparent; white-space: nowrap; margin-bottom: 4px; }
+.nav-item.active { background: #29473c; color: #bff4d7; }
+.storage { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12px; color: #c0c9c2; }
+.storage button { font-size: 12px; }
+body.sidebar-closed { --sidebar-width: 0px; }
+.library-main { min-width: 0; }
+.library-toolbar { display: flex; align-items: center; gap: 12px; padding: 18px 22px; flex-wrap: wrap; }
+h1 { margin: 0 auto 0 0; font-size: 23px; font-weight: 600; }
+.search { display: flex; align-items: center; gap: 8px; }
+.search input { width: 200px; }
+.bookshelf { background: linear-gradient(#0002, #0002), url("background-wood.jpg") center / 400px repeat; min-height: 0; }
+.shelf { padding: 22px 12px 0; content-visibility: auto; contain-intrinsic-size: auto 308px; }
+.shelf-heading { font-size: 13px; margin: 0 0 12px; color: #f5efdf; text-shadow: 0 1px 3px #000; text-align: center; font-weight: 500; }
+.shelf-books { display: flex; justify-content: center; align-items: flex-end; gap: 8px; min-height: 250px; }
+.shelf-ledge { height: 24px; background: linear-gradient(to bottom, #ffffff1a, #0000004d), url("shelf-wood.jpg") center / cover; box-shadow: 0 15px 25px #0009, inset 0 1px 1px #ffffff40; border-radius: 2px; }
+.book-card { position: relative; flex: 0 0 auto; margin-bottom: 0; }
+.book-read { padding: 0; border: 0; border-radius: 4px 8px 8px 4px; overflow: hidden; position: relative; display: flex; box-shadow: 2px 0 5px #0005, 0 5px 4px #0008; }
+.book-spine { width: var(--spine-width, 50px); height: var(--book-height, 240px); color: var(--spine-text, #fff); background: linear-gradient(to right, #0006, #ffffff20 20%, #ffffff10 80%, #0006), var(--spine-color, #354952); transform: perspective(500px) rotateY(-5deg); }
+.book-spine::before { content: ""; position: absolute; inset: 0; opacity: .18; background: url("shelf-wood.jpg") center / 200px; mix-blend-mode: luminosity; }
+.book-spine span { position: relative; writing-mode: vertical-rl; text-orientation: mixed; width: 100%; height: 100%; padding: 14px 8px; display: flex; justify-content: center; align-items: center; font: 600 var(--spine-font, 14px)/1.2 system-ui, sans-serif; overflow: hidden; }
+.book-cover { width: 160px; height: 240px; background: #262a28; color: white; }
+.book-cover img { width: 100%; height: 100%; object-fit: contain; }
+.book-cover .fallback-title { padding: 16px; text-align: left; font-size: 16px; overflow-wrap: anywhere; }
+.cover-card { width: 160px; }
+.progress { width: 100%; height: 4px; background: #283029; }
+.progress-fill { height: 100%; background: #007aff; }
+.book-remove, .book-export { position: absolute; z-index: 2; top: 4px; width: 25px; height: 25px; padding: 4px; background: #151717e6; border: 0; opacity: 0; }
+.book-remove { right: 3px; } .book-export { left: 3px; }
+.book-remove svg, .book-export svg { width: 15px; height: 15px; }
+.book-card:hover .book-remove, .book-card:hover .book-export, .book-card:focus-within .book-remove, .book-card:focus-within .book-export { opacity: 1; }
+.empty-state { text-align: center; padding: 100px 20px; color: #bac4be; }
+.empty-state svg { width: 48px; height: 48px; }
+.empty-state h2 { font-size: 20px; font-weight: 500; }
+#reader-view { position: fixed; inset: 0; height: 100dvh; display: flex; flex-direction: column; z-index: 10; background: #141515; }
+.reader-header { display: flex; align-items: center; padding: max(8px, env(safe-area-inset-top)) 12px 8px; gap: 12px; background: #111414; flex-shrink: 0; }
+.reader-heading { display: flex; align-items: baseline; justify-content: space-between; flex: 1; min-width: 0; gap: 12px; font-size: 14px; }
+.reader-heading strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#page-position { flex-shrink: 0; font-size: 12px; color: #b8c6bb; }
+#reader-host { min-height: 0; flex: 1; display: flex; }
+#reader-frame { width: 100%; height: 100%; border: 0; }
+#reader-controls { flex-shrink: 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 12px max(8px, env(safe-area-inset-bottom)); background: #111414; }
+.show-controls { position: absolute; bottom: max(8px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #171c1abf; }
+.text-settings { position: absolute; right: 10px; top: 64px; width: 240px; padding: 16px; border: 1px solid #48534c; border-radius: 6px; background: #202722; box-shadow: 0 8px 24px #0008; z-index: 20; }
+.text-settings label, dialog > label { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.text-settings output { font-size: 12px; color: #badac6; }
+dialog { color: inherit; background: #222a25; border: 1px solid #566259; border-radius: 6px; width: min(440px, calc(100% - 32px)); padding: 20px; }
+dialog::backdrop { background: #0009; }
+dialog header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+dialog h2 { font-size: 20px; margin: 0; }
+.dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.notice { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 40; max-width: min(580px, calc(100% - 24px)); padding: 12px 18px; border: 1px solid #62836e; border-radius: 4px; background: #1b3026; box-shadow: 0 4px 20px #0005; font-size: 14px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (hover: none) { .book-remove, .book-export { opacity: 1; } }
+@media (max-width: 700px) {
+  :root { --sidebar-width: 0px; }
+  .app-header { padding: 0 10px; gap: 8px; }
+  .brand { font-size: 17px; }
+  .header-status { font-size: 10px; }
+  body:not(.sidebar-closed) #sidebar { position: fixed; top: 60px; bottom: 0; left: 0; width: 212px; z-index: 5; box-shadow: 8px 0 20px #0008; }
+  .library-toolbar { padding: 16px 12px; gap: 10px; }
+  h1 { flex-basis: 100%; font-size: 21px; }
+  .search { flex: 1; min-width: 0; } .search input { width: 100%; }
+  .sort { flex-basis: 45%; } .sort select { width: 100%; }
+  .book-cover, .cover-card { width: 145px; }
+  .book-cover { height: 240px; }
+  .reader-heading { flex-direction: column; gap: 2px; }
+  #reader-controls { gap: 5px; padding-left: 6px; padding-right: 6px; }
+  #speech-toggle { padding: 9px 8px; font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .app-layout { transition: none; } }

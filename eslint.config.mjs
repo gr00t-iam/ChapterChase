@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     "desktop/dist/**",
     "desktop/node_modules/**",
     "ios/ChapterChase/Reader/**",
+    "pwa/dist/**",
     "next-env.d.ts",
     "public/vendor/onnxruntime/**",
     "public/vendor/piper-wasm/**",

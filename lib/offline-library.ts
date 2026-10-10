@@ -16,8 +16,12 @@ const offlineBookStore = localforage.createInstance({
 
 export const offlineLibraryChangedEvent = "chapterchase:offline-library-changed";
 
+export function bookFileUrl(bookId: string, download = false) {
+  return `/api/books/${encodeURIComponent(bookId)}/file${download ? "?download=1" : ""}`;
+}
+
 export async function downloadBookForOffline(bookId: string) {
-  const response = await fetch(`/api/books/${bookId}/file`);
+  const response = await fetch(bookFileUrl(bookId));
   if (!response.ok) {
     throw new Error("Download failed, check your connection.");
   }

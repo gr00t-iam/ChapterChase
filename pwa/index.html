@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171919"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="app.css">
+  <title>ChapterChase Offline</title>
+</head>
+<body>
+<div id="library-shell">
+  <header class="app-header"><button id="sidebar-toggle" class="icon-button" title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded="true"><i data-icon="Menu"></i></button><a class="brand" href="./"><i data-icon="BookOpen"></i>ChapterChase</a><div class="header-status"><span id="offline-state">Preparing offline</span><button id="update-app" hidden>Update available</button></div></header>
+  <div class="app-layout">
+    <aside id="sidebar"><nav aria-label="Library"><button id="all-books" class="nav-item active"><i data-icon="Library"></i>Book Shelf</button><button id="reading-books" class="nav-item"><i data-icon="BookOpen"></i>Continue Reading</button><button id="open-settings" class="nav-item"><i data-icon="Settings"></i>Settings</button></nav><div class="storage"><span id="book-count">0 books</span><span id="storage-status">Device storage</span><button id="keep-storage">Keep on this device</button></div></aside>
+    <main class="library-main"><div class="library-toolbar"><h1 id="view-title">Book Shelf</h1><label class="search"><i data-icon="Search"></i><input id="search" type="search" placeholder="Search books" aria-label="Search books"></label><label class="sort"><span class="sr-only">Sort books</span><select id="sort" aria-label="Sort books"><option value="title">Title A-Z</option><option value="recent">Recently opened</option><option value="added">Recently added</option></select></label><button id="import-button" class="primary"><i data-icon="Plus"></i>Add Books</button><input id="import-files" type="file" accept=".epub,.pdf,application/epub+zip,application/pdf" multiple hidden></div><div id="books" class="bookshelf"></div><div id="empty" class="empty-state"><i data-icon="BookOpen"></i><h2>No books yet</h2></div></main>
+  </div>
+</div>
+<section id="reader-view" hidden aria-label="Book reader">
+  <header class="reader-header"><button id="close-reader" class="icon-button" title="Close reader" aria-label="Close reader"><i data-icon="X"></i></button><div class="reader-heading"><strong id="reader-title"></strong><span id="page-position"></span></div><button id="text-settings-toggle" class="icon-button" title="Text settings" aria-label="Text settings">Aa</button></header>
+  <div id="reader-host"></div>
+  <div id="text-settings" class="text-settings" hidden><label>Font size <output id="font-size-value">18px</output><input id="font-size" type="range" min="12" max="36" value="18"></label><label>Theme<select id="reader-theme"><option value="paper">Paper</option><option value="night">Night</option></select></label></div>
+  <footer id="reader-controls"><button id="previous" class="icon-button" title="Previous page" aria-label="Previous page"><i data-icon="ChevronLeft"></i></button><button id="next" class="icon-button" title="Next page" aria-label="Next page"><i data-icon="ChevronRight"></i></button><button id="speech-toggle"><i data-icon="Play"></i><span>Start Reading</span></button><button id="speech-stop" class="icon-button" title="Stop reading" aria-label="Stop reading"><i data-icon="Square"></i></button><button id="hide-controls" class="icon-button" title="Hide controls" aria-label="Hide controls"><i data-icon="ChevronDown"></i></button></footer>
+  <button id="show-controls" class="show-controls" title="Show controls" aria-label="Show controls" hidden><i data-icon="ChevronUp"></i></button>
+</section>
+<dialog id="settings-dialog"><form method="dialog"><header><h2>Settings</h2><button class="icon-button" aria-label="Close settings"><i data-icon="X"></i></button></header></form><label>NAS library address<input id="nas-url" type="url" placeholder="https://your-nas.example"></label><div class="dialog-actions"><button id="save-nas">Save address</button><button id="open-nas"><i data-icon="ExternalLink"></i>Open NAS Library</button></div><p id="settings-status" role="status"></p></dialog>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<script src="app.js"></script>
+</body></html>

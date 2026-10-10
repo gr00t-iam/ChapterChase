@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "pwa:build": "node scripts/build-pwa.mjs",
+    "pwa:test": "node scripts/test-pwa.mjs",
+    "pwa:test-speech": "node scripts/test-pwa-speech.mjs",
+    "test:book-download": "tsx scripts/test-book-download.ts",
     "desktop:prepare": "npm run build && node scripts/prepare-desktop.mjs",
     "desktop:start": "npm --prefix desktop start",
     "desktop:package": "npm --prefix desktop run package",
@@ -63,6 +67,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "playwright": "^1.64.0",
+    "pwa-pdfjs": "npm:pdfjs-dist@^6.4.299",
+    "pwa-sharp": "npm:sharp@^0.35.5",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

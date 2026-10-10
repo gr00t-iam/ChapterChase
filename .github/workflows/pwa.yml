@@ -1,0 +1,57 @@
+name: Offline PWA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['pwa/**', 'mobile/**', 'scripts/*pwa*', 'package.json', 'package-lock.json', '.github/workflows/pwa.yml']
+  pull_request:
+    paths: ['pwa/**', 'mobile/**', 'scripts/*pwa*', 'package.json', 'package-lock.json', '.github/workflows/pwa.yml']
+permissions:
+  contents: read
+concurrency:
+  group: pwa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run test:book-download
+      - run: npm run pwa:test-speech
+      - run: npm run pwa:build
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run pwa:test
+      - name: Package static preview
+        run: cd pwa/dist && zip -qr ../../ChapterChase-PWA-0.3.0-preview.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: standalone-pwa
+          path: ChapterChase-PWA-0.3.0-preview.zip
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: pwa/dist
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-browser-screenshots
+          path: /tmp/chapterchase-pwa-screenshots
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

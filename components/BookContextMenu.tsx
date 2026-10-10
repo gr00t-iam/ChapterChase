@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryBookView } from "@/components/LibraryBooksContext";
 import { removeLocalSourceBook } from "@/lib/local-library";
-import { downloadBookForOffline, removeOfflineBook } from "@/lib/offline-library";
+import { bookFileUrl, downloadBookForOffline, removeOfflineBook } from "@/lib/offline-library";
 
 export function BookContextMenu({
   bookId,
@@ -302,6 +302,12 @@ export function BookContextMenu({
           <button onClick={markUnread}>Mark as Unread</button>
           <button onClick={toggleWantToRead}>{wantToRead ? "Remove from Want to Read" : "Add to Want to Read"}</button>
           {!isLocalOnly ? <button onClick={toggleOffline}>{offlineAvailable ? "Remove from Offline" : "Download for Offline"}</button> : null}
+          {!isLocalOnly ? <button onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsOpen(false);
+            window.location.assign(bookFileUrl(bookId, true));
+          }}>Download Original File</button> : null}
           <button onClick={removeFromLibrary}>Delete</button>
           {isLocalOnly ? <span className="book-context-note">Local Only: stored on this device</span> : null}
           {!isLocalOnly ? (

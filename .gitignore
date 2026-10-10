@@ -55,3 +55,4 @@ next-env.d.ts
 /ios/ChapterChase/Reader/
 /ios/*.xcodeproj/
 /ios/build/
+/pwa/dist/

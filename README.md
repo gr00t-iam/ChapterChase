@@ -8,6 +8,7 @@ Choose your platform. These are testing previews, not production releases.
 
 | Platform | Download | Notes |
 | --- | --- | --- |
+| Offline PWA: Mac / iPhone / iPad | [Open / Install PWA](https://gr00t-iam.github.io/ChapterChase/) | [Installation guide](docs/pwa-install.md); local books, no login required. |
 | Windows x64 | [Windows installer (.exe)](https://github.com/gr00t-iam/ChapterChase/releases/download/v0.2.0-windows-preview/ChapterChase.Setup.0.2.0.exe) | Unsigned; Windows may show SmartScreen. |
 | macOS Apple Silicon | [Mac ARM64 (.dmg)](https://github.com/gr00t-iam/ChapterChase/releases/download/v0.2.0-preview/ChapterChase-0.2.0-arm64.dmg) | Apple Silicon MacBook / Mac Mini; not notarized. |
 | macOS Intel | [Mac Intel (.dmg)](https://github.com/gr00t-iam/ChapterChase/releases/download/v0.2.0-preview/ChapterChase-0.2.0.dmg) | Intel Macs; not notarized. |
@@ -15,6 +16,7 @@ Choose your platform. These are testing previews, not production releases.
 
 - [Windows release](https://github.com/gr00t-iam/ChapterChase/releases/tag/v0.2.0-windows-preview)
 - [Apple release: macOS, iOS and iPadOS](https://github.com/gr00t-iam/ChapterChase/releases/tag/v0.2.0-preview)
+- [Standalone PWA release](https://github.com/gr00t-iam/ChapterChase/releases/tag/v0.3.0-pwa-preview)
 
 Windows and Apple installers are kept in separate releases. GitHub's automatically generated source archives are source code, not installers.
 
@@ -22,7 +24,7 @@ Windows and Apple installers are kept in separate releases. GitHub's automatical
 
 Desktop applications keep a local database and local books. The native iPhone/iPad preview imports EPUB/PDF files and downloads books from a ChapterChase NAS server; downloaded books and local progress are available offline. See the [Apple guide](docs/apple-testing.md) for preview limitations and signing requirements.
 
-The current NAS web app includes caching, but it is not yet a fully standalone offline-first PWA. A standalone PWA would need a cached app shell, browser-local books/progress, and optional server connections. Remote NAS downloads still require a reachable NAS; offline reading does not.
+The separate standalone PWA has a cached app shell, browser-local EPUB/PDF books and progress, and optional NAS-library links. It opens without login or server access after initial installation. See the [PWA guide](docs/pwa-install.md). Remote NAS downloads still require a reachable NAS; offline reading does not. The original NAS web app remains a separate server-dependent application.
 
 ## Self-Hosted Web App
 

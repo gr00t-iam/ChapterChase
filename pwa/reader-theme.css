@@ -1,0 +1,4 @@
+:root { --text-size: 18px; --page-color: #f8f7f3; --ink-color: #171717; }
+:root[data-theme="night"] { --page-color: #202020; --ink-color: #f2f2f2; }
+.page { background: var(--page-color); color: var(--ink-color); }
+.page-text { font-size: var(--text-size); }
