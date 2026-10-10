@@ -160,6 +160,7 @@ window.addEventListener("message", async event => {
 $("close-reader").onclick = async () => {
   speech.stop(); abortText(); frame?.remove(); frame = null; current = null; loaded = false;
   $("reader-view").hidden = true; $("library-shell").hidden = false;
+  render();
   await progressQueue; await refresh(); $("import-button").focus();
 };
 $("previous").onclick = () => command("previous"); $("next").onclick = () => command("next");
@@ -180,7 +181,12 @@ for (const [id, value, title] of [["all-books", "all", "Book Shelf"], ["reading-
 }
 $("search").oninput = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(render, 120); };
 $("sort").onchange = render;
-new ResizeObserver(() => { clearTimeout(refreshTimer); refreshTimer = setTimeout(render, 120); }).observe($("books"));
+let shelfWidth = 0;
+new ResizeObserver(entries => {
+  const width = Math.round(entries[0].contentRect.width);
+  if (!width || $("library-shell").hidden || width === shelfWidth) return;
+  shelfWidth = width; clearTimeout(refreshTimer); refreshTimer = setTimeout(render, 120);
+}).observe($("books"));
 $("import-button").onclick = () => $("import-files").click();
 $("import-files").onchange = async () => {
   $("import-button").disabled = true;

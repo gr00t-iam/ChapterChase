@@ -123,6 +123,8 @@ try {
       await page.getByRole("status").filter({ hasText: "Close your book before updating" }).waitFor();
       assert.equal(await page.locator("#reader-view").isVisible(), true);
       await page.getByRole("button", { name: "Close reader", exact: true }).click();
+      await page.locator(".book-cover").first().waitFor();
+      await page.waitForTimeout(250);
       await page.screenshot({ path: path.join(screenshots, `${name}-continue-reading.png`) });
       await Promise.all([page.waitForEvent("framenavigated", { predicate: frame => frame === page.mainFrame() }), page.getByRole("button", { name: "Update available", exact: true }).click()]);
       await page.getByText("Ready offline", { exact: true }).waitFor();
